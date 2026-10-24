@@ -104,16 +104,36 @@
   /* ------------------------------------------------------------------ *
    * Audio engine
    *
-   * worklet -> highpass -> lowpass x2 -> low shelf -> makeup -> limiter
-   *         -> volume -> gate (play/pause) -> sleep fade -> MediaStream -> <audio>
+   * worklet (generator, filters, limiter: all on the audio thread, 64-bit floats)
+   *   -> gate (play/pause fade) -> sleep fade -> output
    *
-   * The graph is routed through a MediaStream into a real <audio> element.
-   * That makes Android treat this as media playback: it keeps running with
-   * the screen off, gets a lock-screen / notification player, and is not
-   * suspended like a bare AudioContext.
+   * Output route:
+   *   direct  straight to the audio output (cleanest). A silent, looping <audio>
+   *           element runs alongside it so Android treats the page as media
+   *           playback: lock-screen player, and it keeps running with the screen off.
+   *   stream  routed through a MediaStream into the <audio> element. Same background
+   *           behaviour, kept as a fallback in case direct is stopped by a device.
    * ------------------------------------------------------------------ */
+  const ROUTE_KEY = 'deepbrown:route';
+
+  function silentWavUrl() {              // 5 s, 8 kHz mono, +-1 LSB: inaudible but not digital zero
+    const rate = 8000, n = rate * 5, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+    const w = (o, str) => { for (let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); };
+    w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    w(36, 'data'); v.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, ((Math.random() * 3) | 0) - 1, true);
+    return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+  }
+
   class Engine {
-    constructor() { this.ctx = null; this.initP = null; this.direct = false; this.busy = false; this.token = 0; }
+    constructor() {
+      this.ctx = null; this.initP = null; this.busy = false; this.switching = false; this.token = 0;
+      this.el = $('#sink'); this.silent = null; this.streamDest = null;
+      let r = 'direct'; try { r = localStorage.getItem(ROUTE_KEY) === 'stream' ? 'stream' : 'direct'; } catch (_) {}
+      this.route = r;
+    }
 
     init() {
       if (!this.initP) this.initP = this._init().catch((e) => { this.initP = null; throw e; });
@@ -123,65 +143,52 @@
     async _init() {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC || !window.AudioWorkletNode) throw new Error('unsupported');
-      const ctx = new AC({ latencyHint: 'playback' });   // biggest buffers: fewest dropouts
+      const ctx = new AC({ latencyHint: 'playback' });   // largest buffers: fewest dropouts
       await ctx.audioWorklet.addModule('noise-processor.js');
 
       const node = new AudioWorkletNode(ctx, 'brown-noise', { numberOfInputs: 0, outputChannelCount: [2] });
-      const hp = new BiquadFilterNode(ctx, { type: 'highpass', frequency: HP_HZ, Q: Q_BUTTER_DB });
-      const lp1 = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 200, Q: Q_BUTTER_DB });
-      const lp2 = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 200, Q: Q_LP2_DB });
-      const shelf = new BiquadFilterNode(ctx, { type: 'lowshelf', frequency: SHELF_HZ, gain: 0 });
-      const makeup = new GainNode(ctx, { gain: 1 });
-      const limiter = new DynamicsCompressorNode(ctx, { threshold: -2, knee: 2, ratio: 20, attack: 0.003, release: 0.25 });
-      const volume = new GainNode(ctx, { gain: 0 });
       const gate = new GainNode(ctx, { gain: 0 });
       const sleepG = new GainNode(ctx, { gain: 1 });
       const analyser = new AnalyserNode(ctx, { fftSize: 2048, smoothingTimeConstant: 0 });
+      node.connect(gate).connect(sleepG);
+      sleepG.connect(analyser);                          // tap for the scope only
 
-      node.connect(hp).connect(lp1).connect(lp2).connect(shelf).connect(makeup)
-          .connect(limiter).connect(volume).connect(gate).connect(sleepG);
-      sleepG.connect(analyser);
-
-      // Two slow, unrelated sine LFOs move the cutoff in cents: it never audibly repeats.
-      const lfoA = new OscillatorNode(ctx, { frequency: 0.043 });
-      const lfoB = new OscillatorNode(ctx, { frequency: 0.117 });
-      const lfoGA = new GainNode(ctx, { gain: 0 });
-      const lfoGB = new GainNode(ctx, { gain: 0 });
-      lfoA.connect(lfoGA); lfoB.connect(lfoGB);
-      for (const g of [lfoGA, lfoGB]) { g.connect(lp1.detune); g.connect(lp2.detune); }
-      lfoA.start(); lfoB.start();
-
-      const dest = ctx.createMediaStreamDestination();
-      sleepG.connect(dest);
-      const el = $('#sink');
-      el.srcObject = dest.stream;
-
-      Object.assign(this, { ctx, node, lp1, lp2, shelf, makeup, volume, gate, sleepG, analyser, lfoGA, lfoGB, el });
-      this.apply(S, true);
-
+      Object.assign(this, { ctx, node, gate, sleepG, analyser });
+      this.apply(S);
+      this.setRoute(this.route);
       ctx.addEventListener('statechange', () => app.onContextState());
     }
 
-    apply(s, immediate = false) {
+    apply(s) {
       if (!this.ctx) return;
-      const t = this.ctx.currentTime, tc = 0.06;
-      const set = (param, v) => immediate ? param.setValueAtTime(v, t) : param.setTargetAtTime(v, t, tc);
+      const t = this.ctx.currentTime, P = this.node.parameters;
       const cut = cutoffHz(s.deep), sDb = shelfDb(s.rumble);
-      set(this.lp1.frequency, cut);
-      set(this.lp2.frequency, cut);
-      set(this.shelf.gain, sDb);
-      set(this.makeup.gain, levelGain(cut, sDb, this.ctx.sampleRate));
-      set(this.node.parameters.get('width'), s.width);
-      const cents = swellCents(s.swell);
-      set(this.lfoGA.gain, cents * 0.65);
-      set(this.lfoGB.gain, cents * 0.35);
-      set(this.volume.gain, volumeGain(s.volume));
+      P.get('cutoff').setValueAtTime(cut, t);
+      P.get('shelfDb').setValueAtTime(sDb, t);
+      P.get('makeup').setValueAtTime(levelGain(cut, sDb, this.ctx.sampleRate), t);
+      P.get('width').setValueAtTime(s.width, t);
+      P.get('swell').setValueAtTime(swellCents(s.swell), t);
+      P.get('volume').setValueAtTime(volumeGain(s.volume), t);   // smoothed per sample inside the worklet
     }
 
-    useDirect() {           // fallback if the <audio> route is refused
-      if (this.direct) return;
-      this.direct = true;
-      this.sleepG.connect(this.ctx.destination);
+    setRoute(mode) {
+      this.route = mode;
+      try { localStorage.setItem(ROUTE_KEY, mode); } catch (_) {}
+      if (!this.ctx) return;
+      this.switching = true; setTimeout(() => { this.switching = false; }, 400);
+      try { this.sleepG.disconnect(this.ctx.destination); } catch (_) {}
+      if (this.streamDest) { try { this.sleepG.disconnect(this.streamDest); } catch (_) {} }
+      const el = this.el;
+      if (mode === 'stream') {
+        if (!this.streamDest) this.streamDest = this.ctx.createMediaStreamDestination();
+        this.sleepG.connect(this.streamDest);
+        el.loop = false; el.removeAttribute('src'); el.srcObject = this.streamDest.stream;
+      } else {
+        this.sleepG.connect(this.ctx.destination);
+        if (!this.silent) this.silent = silentWavUrl();
+        el.srcObject = null; el.loop = true; el.src = this.silent;
+      }
+      if (app.wanted) el.play().catch(() => {});
     }
 
     async start() {
@@ -197,9 +204,8 @@
         gate.gain.cancelScheduledValues(t);
         gate.gain.setValueAtTime(0, t);
         gate.gain.linearRampToValueAtTime(1, t + 0.7);   // fade in: no click
-        if (!this.direct) {
-          try { await el.play(); } catch (_) { this.useDirect(); }
-        }
+        try { await el.play(); }
+        catch (_) { if (this.route === 'stream') this.setRoute('direct'); }   // direct needs no element to make sound
       } finally { this.busy = false; }
     }
 
@@ -429,11 +435,11 @@
     recover() {
       if (!this.wanted || !engine.ctx || engine.busy) return;
       if (engine.ctx.state !== 'running') engine.ctx.resume().catch(() => {});
-      if (!engine.direct && engine.el.paused) engine.el.play().catch(() => {});
+      if (engine.el.paused) engine.el.play().catch(() => {});
     },
     onContextState() { if (this.wanted && engine.ctx.state !== 'running') this.recover(); },
     onElementPause() {          // paused by the system (call, headphones unplugged): respect it
-      if (!this.wanted || engine.busy) return;
+      if (!this.wanted || engine.busy || engine.switching) return;
       this.wanted = false; this.clearTimer(); this.renderPlay(); scope.halt();
       engine.pause(); this.updateMediaSession();
     },
@@ -491,6 +497,11 @@
     b.addEventListener('click', () => app.setTimer(min));
     el.timerBtns.appendChild(b);
   }
+  // output route
+  const routeBtns = $('#routeBtns');
+  const renderRoute = () => { for (const b of routeBtns.children) b.setAttribute('aria-pressed', String(b.dataset.mode === engine.route)); };
+  for (const b of routeBtns.children) b.addEventListener('click', () => { engine.setRoute(b.dataset.mode); renderRoute(); });
+  renderRoute();
   // sliders
   for (const k of SLIDERS) $('#' + k).addEventListener('input', (e) => app.set(k, e.target.value / 100));
   // transport
@@ -519,7 +530,6 @@
 
   // keep playing: recover when the page comes back, and when the system or browser interferes
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { app.recover(); scope.draw(performance.now()); } });
-  engine.el = $('#sink');
   $('#sink').addEventListener('pause', () => app.onElementPause());
   $('#sink').addEventListener('error', () => app.recover());
   setInterval(() => app.tick(), 1000);
