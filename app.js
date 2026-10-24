@@ -114,7 +114,8 @@
    *   stream  routed through a MediaStream into the <audio> element. Same background
    *           behaviour, kept as a fallback in case direct is stopped by a device.
    * ------------------------------------------------------------------ */
-  const ROUTE_KEY = 'deepbrown:route';
+  const ROUTE_KEY = 'deepbrown:route2';          // only written when the person picks a route
+  const isAndroid = /Android/i.test(navigator.userAgent);
 
   function silentWavUrl() {              // 5 s, 8 kHz mono, +-1 LSB: inaudible but not digital zero
     const rate = 8000, n = rate * 5, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
@@ -131,8 +132,8 @@
     constructor() {
       this.ctx = null; this.initP = null; this.busy = false; this.switching = false; this.token = 0;
       this.el = $('#sink'); this.silent = null; this.streamDest = null;
-      let r = 'direct'; try { r = localStorage.getItem(ROUTE_KEY) === 'stream' ? 'stream' : 'direct'; } catch (_) {}
-      this.route = r;
+      let r = null; try { r = localStorage.getItem(ROUTE_KEY); } catch (_) {}
+      this.route = r === 'direct' || r === 'stream' ? r : (isAndroid ? 'stream' : 'direct');
     }
 
     init() {
@@ -143,8 +144,9 @@
     async _init() {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC || !window.AudioWorkletNode) throw new Error('unsupported');
-      const ctx = new AC({ latencyHint: 'playback' });   // largest buffers: fewest dropouts
-      await ctx.audioWorklet.addModule('noise-processor.js');
+      // direct: biggest buffers. stream: default hint, whose block size matches what the media element pulls.
+      const ctx = new AC(this.route === 'direct' ? { latencyHint: 'playback' } : {});
+      try { await ctx.audioWorklet.addModule('noise-processor.js'); } catch (e) { ctx.close().catch(() => {}); throw e; }
 
       const node = new AudioWorkletNode(ctx, 'brown-noise', { numberOfInputs: 0, outputChannelCount: [2] });
       const gate = new GainNode(ctx, { gain: 0 });
@@ -155,8 +157,21 @@
 
       Object.assign(this, { ctx, node, gate, sleepG, analyser });
       this.apply(S);
-      this.setRoute(this.route);
+      this.connectRoute();
       ctx.addEventListener('statechange', () => app.onContextState());
+    }
+
+    connectRoute() {
+      const el = this.el;
+      if (this.route === 'stream') {
+        this.streamDest = this.ctx.createMediaStreamDestination();
+        this.sleepG.connect(this.streamDest);
+        el.loop = false; el.removeAttribute('src'); el.srcObject = this.streamDest.stream;
+      } else {
+        this.sleepG.connect(this.ctx.destination);
+        if (!this.silent) this.silent = silentWavUrl();
+        el.srcObject = null; el.loop = true; el.src = this.silent;
+      }
     }
 
     apply(s) {
@@ -171,24 +186,27 @@
       P.get('volume').setValueAtTime(volumeGain(s.volume), t);   // smoothed per sample inside the worklet
     }
 
-    setRoute(mode) {
+    async teardown() {
+      const ctx = this.ctx;
+      this.token++;
+      this.ctx = null; this.initP = null; this.streamDest = null;
+      this.node = this.gate = this.sleepG = this.analyser = null;
+      try { this.el.pause(); } catch (_) {}
+      this.el.srcObject = null; this.el.removeAttribute('src');
+      if (ctx) { try { await ctx.close(); } catch (_) {} }
+    }
+
+    async setRoute(mode, persist = false) {
+      if (persist) { try { localStorage.setItem(ROUTE_KEY, mode); } catch (_) {} }
+      if (mode === this.route) return;
       this.route = mode;
-      try { localStorage.setItem(ROUTE_KEY, mode); } catch (_) {}
-      if (!this.ctx) return;
-      this.switching = true; setTimeout(() => { this.switching = false; }, 400);
-      try { this.sleepG.disconnect(this.ctx.destination); } catch (_) {}
-      if (this.streamDest) { try { this.sleepG.disconnect(this.streamDest); } catch (_) {} }
-      const el = this.el;
-      if (mode === 'stream') {
-        if (!this.streamDest) this.streamDest = this.ctx.createMediaStreamDestination();
-        this.sleepG.connect(this.streamDest);
-        el.loop = false; el.removeAttribute('src'); el.srcObject = this.streamDest.stream;
-      } else {
-        this.sleepG.connect(this.ctx.destination);
-        if (!this.silent) this.silent = silentWavUrl();
-        el.srcObject = null; el.loop = true; el.src = this.silent;
-      }
-      if (app.wanted) el.play().catch(() => {});
+      if (!this.ctx) return;                     // nothing built yet: the next play uses the new route
+      this.switching = true;
+      try {
+        await this.teardown();
+        if (app.wanted) await this.start();
+      } catch (_) { /* the watchdog / play button recover */ }
+      setTimeout(() => { this.switching = false; }, 500);
     }
 
     async start() {
@@ -205,7 +223,7 @@
         gate.gain.setValueAtTime(0, t);
         gate.gain.linearRampToValueAtTime(1, t + 0.7);   // fade in: no click
         try { await el.play(); }
-        catch (_) { if (this.route === 'stream') this.setRoute('direct'); }   // direct needs no element to make sound
+        catch (_) { /* direct mode needs no element to make sound */ }
       } finally { this.busy = false; }
     }
 
@@ -218,7 +236,7 @@
       gate.gain.setValueAtTime(gate.gain.value, t);
       gate.gain.linearRampToValueAtTime(0, t + 0.25);
       await sleep(320);
-      if (token !== this.token) return;                  // user pressed play again
+      if (token !== this.token || ctx !== this.ctx) return;   // user pressed play again / engine rebuilt
       try { el.pause(); } catch (_) {}
       try { await ctx.suspend(); } catch (_) {}
       this.resetSleepFade();
@@ -351,6 +369,12 @@
 
   const app = {
     wanted: false,
+    lockRelease: null,
+    holdLock() {
+      if (this.lockRelease || !navigator.locks) return;
+      navigator.locks.request('deepbrown-playing', () => new Promise((res) => { this.lockRelease = res; })).catch(() => {});
+    },
+    releaseLock() { if (this.lockRelease) { this.lockRelease(); this.lockRelease = null; } },
     timerEnd: 0,
     timerMin: 0,
     errorText: '',
@@ -414,11 +438,11 @@
     /* playback */
     async play() {
       if (this.wanted) return;
-      this.wanted = true; this.errorText = ''; this.renderPlay(); scope.run();
+      this.wanted = true; this.errorText = ''; this.holdLock(); this.renderPlay(); scope.run();
       this.updateMediaSession();
       try { await engine.start(); }
       catch (e) {
-        this.wanted = false;
+        this.wanted = false; this.releaseLock();
         this.errorText = e && e.message === 'unsupported'
           ? "This browser can't run the audio engine. Try Chrome." : 'Audio could not start. Tap play to try again.';
         this.renderPlay(); scope.halt(); this.updateMediaSession();
@@ -426,7 +450,7 @@
     },
     pause() {
       if (!this.wanted) return;
-      this.wanted = false; this.clearTimer(); this.renderPlay(); scope.halt();
+      this.wanted = false; this.releaseLock(); this.clearTimer(); this.renderPlay(); scope.halt();
       engine.pause(); this.updateMediaSession();
     },
     toggle() { this.wanted ? this.pause() : this.play(); },
@@ -440,7 +464,7 @@
     onContextState() { if (this.wanted && engine.ctx.state !== 'running') this.recover(); },
     onElementPause() {          // paused by the system (call, headphones unplugged): respect it
       if (!this.wanted || engine.busy || engine.switching) return;
-      this.wanted = false; this.clearTimer(); this.renderPlay(); scope.halt();
+      this.wanted = false; this.releaseLock(); this.clearTimer(); this.renderPlay(); scope.halt();
       engine.pause(); this.updateMediaSession();
     },
 
@@ -500,7 +524,7 @@
   // output route
   const routeBtns = $('#routeBtns');
   const renderRoute = () => { for (const b of routeBtns.children) b.setAttribute('aria-pressed', String(b.dataset.mode === engine.route)); };
-  for (const b of routeBtns.children) b.addEventListener('click', () => { engine.setRoute(b.dataset.mode); renderRoute(); });
+  for (const b of routeBtns.children) b.addEventListener('click', () => { engine.setRoute(b.dataset.mode, true); renderRoute(); });
   renderRoute();
   // sliders
   for (const k of SLIDERS) $('#' + k).addEventListener('input', (e) => app.set(k, e.target.value / 100));

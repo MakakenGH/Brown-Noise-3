@@ -20,6 +20,14 @@ A PWA needs HTTPS (or `localhost`). Opening `index.html` from the file system wi
    Aggressive battery savers (Xiaomi, Huawei, Samsung "sleeping apps") can still kill background audio otherwise.
 3. Don't force-close the app from the recents screen while it plays.
 
+## Output mode
+
+* **Stream** (default on Android): sound goes through a media element, so Android keeps it running in the
+  background and with the screen off, with a lock-screen player.
+* **Direct** (default elsewhere): straight to the audio output. Cleanest, but Android may stop it as soon as the app
+  leaves the foreground.
+Switch under "Output" in the app; the choice is remembered.
+
 ## Files
 
 index.html, styles.css, app.js        the app
