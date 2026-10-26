@@ -381,6 +381,25 @@
     timerMin: 0,
     errorText: '',
 
+    // New method to handle visibility changes for background playback
+    handleVisibilityChange() {
+      if (document.hidden) {
+        // When the tab/PWA is hidden (backgrounded), suspend the audio context
+        if (engine.ctx && engine.ctx.state === 'running') {
+          engine.ctx.suspend().catch(e => console.error('Error suspending AudioContext:', e));
+        }
+      } else {
+        // When the tab/PWA is visible (foregrounded), resume the audio context
+        if (engine.ctx && engine.ctx.state === 'suspended') {
+          engine.ctx.resume().then(() => {
+            console.log('AudioContext resumed due to visibility change.');
+          }).catch(err => {
+            console.error('Error resuming AudioContext:', err);
+          });
+        }
+      }
+    },
+
     presetId() {
       const p = PRESETS.find((p) => ['deep', 'rumble', 'width', 'swell'].every((k) => Math.abs(S[k] - p[k]) < 0.006));
       return p ? p.id : null;
@@ -554,7 +573,7 @@
   });
 
   // keep playing: recover when the page comes back, and when the system or browser interferes
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { app.recover(); scope.draw(performance.now()); } });
+  document.addEventListener('visibilitychange', app.handleVisibilityChange);
   $('#sink').addEventListener('pause', () => app.onElementPause());
   $('#sink').addEventListener('error', () => app.recover());
   setInterval(() => app.tick(), 1000);

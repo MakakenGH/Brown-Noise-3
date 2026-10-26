@@ -1,25 +1,38 @@
 {
-  "name": "Secure Coding Sandbox",
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "name": "Python & JS DevContainer with Aider",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+
+  // Installs Node.js / JavaScript environment alongside Python
   "features": {
     "ghcr.io/devcontainers/features/node:1": {
       "version": "lts"
-    },
-    "ghcr.io/devcontainers/features/python:1": {
-      "version": "latest"
-    },
-    "ghcr.io/devcontainers/features/git:1": {}
+    }
   },
+
+  // Automatically install aider-chat when the container is created
+  "postCreateCommand": "pip install --user --upgrade aider-chat",
+
+  // Point Aider to your local LLM server running on the host machine
   "containerEnv": {
-    "OPENAI_API_BASE": "http://model-runner.docker.internal/engines/v1",
-    "OPENAI_API_KEY": "not-needed"
+    "OPENAI_API_BASE": "http://host.docker.internal:9931/v1",
+    "OPENAI_API_KEY": "sk-not-needed"
   },
-  "postCreateCommand": "pip install --user aider-chat",
+
+  // Ensures host.docker.internal resolves correctly on Linux as well as Mac/Windows
+  "runArgs": [
+    "--add-host=host.docker.internal:host-gateway"
+  ],
+
+  // Useful VS Code extensions for Python and JavaScript
   "customizations": {
     "vscode": {
       "extensions": [
-        "saoudrizwan.claude-dev"
+        "ms-python.python",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
       ]
     }
-  }
+  },
+
+  "remoteUser": "vscode"
 }
