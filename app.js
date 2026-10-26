@@ -8,6 +8,16 @@
   const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
   const lerp = (a, b, t) => a + (b - a) * t;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Media and worklet promises can occasionally never settle on Android (a
+  // stalled MediaStream, a hung fetch). Without a deadline that leaves the
+  // engine stuck in its "busy" state and the watchdog turned off for good.
+  const withTimeout = (p, ms) => new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('timeout')), ms);
+    Promise.resolve(p).then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); }
+    );
+  });
 
   /* ------------------------------------------------------------------ *
    * Presets and state
@@ -146,7 +156,7 @@
       if (!AC || !window.AudioWorkletNode) throw new Error('unsupported');
       // direct: biggest buffers. stream: default hint, whose block size matches what the media element pulls.
       const ctx = new AC(this.route === 'direct' ? { latencyHint: 'playback' } : {});
-      try { await ctx.audioWorklet.addModule('noise-processor.js'); } catch (e) { ctx.close().catch(() => {}); throw e; }
+      try { await withTimeout(ctx.audioWorklet.addModule('noise-processor.js'), 15000); } catch (e) { ctx.close().catch(() => {}); throw e; }
 
       const node = new AudioWorkletNode(ctx, 'brown-noise', { numberOfInputs: 0, outputChannelCount: [2] });
       const gate = new GainNode(ctx, { gain: 0 });
@@ -171,6 +181,7 @@
         this.sleepG.connect(this.ctx.destination);
         if (!this.silent) this.silent = silentWavUrl();
         el.srcObject = null; el.loop = true; el.src = this.silent;
+        try { el.load(); } catch (_) {}
       }
     }
 
@@ -193,6 +204,7 @@
       this.node = this.gate = this.sleepG = this.analyser = null;
       try { this.el.pause(); } catch (_) {}
       this.el.srcObject = null; this.el.removeAttribute('src');
+      try { this.el.load(); } catch (_) {}       // drop the old media session / source
       if (ctx) { try { await ctx.close(); } catch (_) {} }
     }
 
@@ -204,12 +216,13 @@
       this.switching = true;
       try {
         await this.teardown();
-        if (app.wanted) await this.start();
+        if (app.wanted) { await this.start(); app.scheduleTimer(); }
       } catch (_) { /* the watchdog / play button recover */ }
       setTimeout(() => { this.switching = false; }, 500);
     }
 
     async start() {
+      if (this.ctx && this.ctx.state === 'closed') await this.teardown();
       const token = ++this.token;
       this.busy = true;
       try {
@@ -217,14 +230,15 @@
         if (token !== this.token) return;
         const { ctx, gate, el } = this;
         this.apply(S);
-        if (ctx.state !== 'running') await ctx.resume();
+        if (ctx.state !== 'running') await withTimeout(ctx.resume(), 8000);
         const t = ctx.currentTime;
         gate.gain.cancelScheduledValues(t);
         gate.gain.setValueAtTime(0, t);
         gate.gain.linearRampToValueAtTime(1, t + 0.7);   // fade in: no click
-        try { await el.play(); }
+        try { await withTimeout(el.play(), 8000); }
         catch (e) {
-          if (this.route === 'stream') throw e;
+          console.warn('Deep Brown: the media element did not start', e);
+          if (this.route === 'stream') throw e;   // on the stream route this element is the output
         }
       } finally { this.busy = false; }
     }
@@ -244,12 +258,16 @@
       this.resetSleepFade();
     }
 
-    sleepFade(remainingMs) {
+    /* Schedules the whole sleep timer on the audio thread, so it still fades
+     * and stops when Android throttles or freezes the page's JavaScript. */
+    scheduleSleepStop(remainingMs) {
       if (!this.ctx) return;
       const t = this.ctx.currentTime, g = this.sleepG.gain;
+      const rem = Math.max(0, remainingMs) / 1000, fade = FADE_MS / 1000;
       g.cancelScheduledValues(t);
-      g.setValueAtTime(clamp(remainingMs / FADE_MS), t);
-      g.linearRampToValueAtTime(0, t + remainingMs / 1000);
+      g.setValueAtTime(1, t);
+      if (rem > fade) g.setValueAtTime(1, t + rem - fade);
+      g.linearRampToValueAtTime(0, t + rem);
     }
     resetSleepFade() {
       if (!this.ctx) return;
@@ -380,24 +398,25 @@
     timerEnd: 0,
     timerMin: 0,
     errorText: '',
+    failures: 0,
+    nextAttempt: 0,
+    retryTimer: 0,
+    pauseRetries: 0,
+    recovering: false,
+    mediaMeta: null,
 
-    // New method to handle visibility changes for background playback
+    /* Android hides the page both when the PWA is minimized and when the
+     * screen turns off. Never suspend the context here: the audio thread has
+     * to keep running, and suspending it is exactly what used to stop
+     * background playback. On return we just re-check everything. */
     handleVisibilityChange() {
-      if (document.hidden) {
-        // When the tab/PWA is hidden (backgrounded), suspend the audio context
-        if (engine.ctx && engine.ctx.state === 'running') {
-          engine.ctx.suspend().catch(e => console.error('Error suspending AudioContext:', e));
-        }
-      } else {
-        // When the tab/PWA is visible (foregrounded), resume the audio context
-        if (engine.ctx && engine.ctx.state === 'suspended') {
-          engine.ctx.resume().then(() => {
-            console.log('AudioContext resumed due to visibility change.');
-          }).catch(err => {
-            console.error('Error resuming AudioContext:', err);
-          });
-        }
-      }
+      if (document.hidden) return;
+      this.cancelRetry();
+      this.nextAttempt = 0;           // coming back to the foreground is a good moment to retry
+      this.recover();
+      this.renderPlay();
+      this.renderTimer();
+      scope.draw(performance.now());
     },
 
     presetId() {
@@ -458,10 +477,14 @@
 
     /* playback */
     async play() {
-      if (this.wanted) return;
-      this.wanted = true; this.errorText = ''; this.holdLock(); this.renderPlay(); scope.run();
+      if (engine.busy) return;
+      // "wanted" can be true while playback is actually dead (a failed
+      // background recovery). Only skip when the engine really is running.
+      if (this.wanted && engine.ctx && engine.ctx.state === 'running' && !engine.el.paused) return;
+      this.wanted = true; this.errorText = ''; this.failures = 0; this.nextAttempt = 0;
+      this.cancelRetry(); this.holdLock(); this.renderPlay(); scope.run();
       this.updateMediaSession();
-      try { await engine.start(); }
+      try { await engine.start(); this.scheduleTimer(); }
       catch (e) {
         this.wanted = false; this.releaseLock();
         this.errorText = e && e.message === 'unsupported'
@@ -471,34 +494,91 @@
     },
     pause() {
       if (!this.wanted) return;
-      this.wanted = false; this.releaseLock(); this.clearTimer(); this.renderPlay(); scope.halt();
+      this.wanted = false; this.releaseLock(); this.clearTimer();
+      this.cancelRetry(); this.failures = 0; this.nextAttempt = 0;
+      this.renderPlay(); scope.halt();
       engine.pause(); this.updateMediaSession();
     },
     toggle() { this.wanted ? this.pause() : this.play(); },
 
     /* keep alive */
-    recover() {
-      if (!this.wanted || !engine.ctx || engine.busy) return;
-      if (engine.ctx.state !== 'running') engine.ctx.resume().catch(() => {});
-      if (engine.el.paused) engine.el.play().catch(() => {});
+    cancelRetry() {
+      if (this.retryTimer) { clearTimeout(this.retryTimer); this.retryTimer = 0; }
+      this.pauseRetries = 0;
     },
-    onContextState() { if (this.wanted && engine.ctx.state !== 'running') this.recover(); },
-    onElementPause() {          // Android can pause the media element when backgrounding; retry while playback is wanted
+    giveUp() {
+      this.wanted = false;
+      this.releaseLock();
+      this.cancelRetry();
+      this.errorText = 'Playback stopped. Tap play to restart.';
+      this.renderPlay();
+      this.updateMediaSession();
+      scope.halt();
+      engine.pause();
+    },
+    noteFailure(e) {
+      console.warn('Deep Brown: playback did not recover', e);
+      if (engine.ctx && engine.ctx.state === 'running' && !engine.el.paused) {
+        this.failures = 0; this.nextAttempt = 0; return;   // it came back on its own
+      }
+      this.failures++;
+      this.nextAttempt = Date.now() + Math.min(30000, 1000 * Math.pow(2, this.failures));
+      if (this.failures >= 5) this.giveUp();               // stop fighting the system forever
+    },
+    async recover() {
+      if (!this.wanted || engine.busy || engine.switching || this.recovering) return;
+      if (Date.now() < this.nextAttempt) return;
+      this.recovering = true;
+      try {
+        if (!engine.ctx || engine.ctx.state === 'closed') {
+          throw new Error('audio context is gone');     // rebuilding needs a user gesture
+        }
+        if (engine.ctx.state !== 'running') await withTimeout(engine.ctx.resume(), 8000);
+        if (engine.el.paused) {
+          try { await withTimeout(engine.el.play(), 8000); }
+          catch (e) {
+            // On the direct route the element only backs the media session;
+            // the sound itself does not depend on it.
+            if (engine.route === 'stream') throw e;
+            console.warn('Deep Brown: the media element did not restart', e);
+          }
+        }
+        this.failures = 0; this.nextAttempt = 0;
+        if (this.errorText) { this.errorText = ''; this.renderPlay(); }
+      } catch (e) {
+        this.noteFailure(e);
+      } finally { this.recovering = false; }
+    },
+    onContextState() { if (this.wanted && engine.ctx && engine.ctx.state !== 'running') this.recover(); },
+    onElementPause() {          // Android pauses the element for audio focus changes, calls, Bluetooth swaps and backgrounding
       if (!this.wanted || engine.busy || engine.switching) return;
-      this.recover();
+      if (this.retryTimer) return;
+      if (engine.route === 'stream' && this.pauseRetries >= 6) { this.giveUp(); return; }   // the system keeps stopping us
+      const delay = Math.min(8000, 500 * Math.pow(2, this.pauseRetries));
+      this.retryTimer = setTimeout(() => {
+        this.retryTimer = 0;
+        if (!this.wanted) return;
+        this.pauseRetries++;                   // back off, don't fight audio focus
+        this.recover();
+      }, delay);
     },
 
     /* sleep timer */
+    scheduleTimer() {
+      const rem = this.timerEnd - Date.now();
+      if (!this.timerEnd || rem <= 0) { this.clearTimer(); engine.resetSleepFade(); return; }
+      engine.scheduleSleepStop(rem);
+    },
     setTimer(min) {
       this.timerMin = min; this.timerEnd = min ? Date.now() + min * 60000 : 0;
-      engine.resetSleepFade(); this.renderTimer();
+      this.scheduleTimer(); this.renderTimer();
     },
     clearTimer() { this.timerMin = 0; this.timerEnd = 0; this.renderTimer(); },   // engine.pause() resets the fade after the output is silent
     tick() {
+      // Foreground bookkeeping only. The fade itself is scheduled on the audio
+      // thread, so a throttled or frozen timer cannot cut it short.
       if (this.timerEnd) {
-        const rem = this.timerEnd - Date.now();
-        if (rem <= 0) { this.pause(); return; }
-        if (rem <= FADE_MS && this.wanted) engine.sleepFade(rem);   // re-anchored every second
+        if (this.timerEnd - Date.now() <= 0) { this.pause(); return; }
         this.renderTimer();
       }
       this.recover();                                               // watchdog
@@ -508,11 +588,15 @@
     updateMediaSession() {
       if (!('mediaSession' in navigator)) return;
       const ms = navigator.mediaSession;
+      const name = this.presetName();
       try {
-        ms.metadata = new MediaMetadata({
-          title: 'Deep brown noise', artist: this.presetName(), album: 'Deep Brown',
-          artwork: [{ src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' }],
-        });
+        if (!this.mediaMeta || this.mediaMeta.artist !== name) {   // metadata only when it changes
+          this.mediaMeta = new MediaMetadata({
+            title: 'Deep brown noise', artist: name, album: 'Deep Brown',
+            artwork: [{ src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' }],
+          });
+          ms.metadata = this.mediaMeta;
+        }
         ms.playbackState = this.wanted ? 'playing' : 'paused';
       } catch (_) {}
     },
@@ -573,7 +657,9 @@
   });
 
   // keep playing: recover when the page comes back, and when the system or browser interferes
-  document.addEventListener('visibilitychange', app.handleVisibilityChange);
+  document.addEventListener('visibilitychange', () => app.handleVisibilityChange());
+  document.addEventListener('resume', () => app.handleVisibilityChange());   // page was frozen and thawed
+  window.addEventListener('pageshow', () => app.handleVisibilityChange());
   $('#sink').addEventListener('pause', () => app.onElementPause());
   $('#sink').addEventListener('error', () => app.recover());
   setInterval(() => app.tick(), 1000);
