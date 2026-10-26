@@ -1,0 +1,25 @@
+{
+  "name": "Secure Coding Sandbox",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "lts"
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+  "containerEnv": {
+    "OPENAI_API_BASE": "http://model-runner.docker.internal/engines/v1",
+    "OPENAI_API_KEY": "not-needed"
+  },
+  "postCreateCommand": "pip install --user aider-chat",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "saoudrizwan.claude-dev"
+      ]
+    }
+  }
+}

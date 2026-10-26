@@ -114,7 +114,7 @@
    *   stream  routed through a MediaStream into the <audio> element. Same background
    *           behaviour, kept as a fallback in case direct is stopped by a device.
    * ------------------------------------------------------------------ */
-  const ROUTE_KEY = 'deepbrown:route2';          // only written when the person picks a route
+  const ROUTE_KEY = 'deepbrown:route3';          // reset older route choices so Android starts in stream mode
   const isAndroid = /Android/i.test(navigator.userAgent);
 
   function silentWavUrl() {              // 5 s, 8 kHz mono, +-1 LSB: inaudible but not digital zero
@@ -223,7 +223,9 @@
         gate.gain.setValueAtTime(0, t);
         gate.gain.linearRampToValueAtTime(1, t + 0.7);   // fade in: no click
         try { await el.play(); }
-        catch (_) { /* direct mode needs no element to make sound */ }
+        catch (e) {
+          if (this.route === 'stream') throw e;
+        }
       } finally { this.busy = false; }
     }
 
@@ -462,10 +464,9 @@
       if (engine.el.paused) engine.el.play().catch(() => {});
     },
     onContextState() { if (this.wanted && engine.ctx.state !== 'running') this.recover(); },
-    onElementPause() {          // paused by the system (call, headphones unplugged): respect it
+    onElementPause() {          // Android can pause the media element when backgrounding; retry while playback is wanted
       if (!this.wanted || engine.busy || engine.switching) return;
-      this.wanted = false; this.releaseLock(); this.clearTimer(); this.renderPlay(); scope.halt();
-      engine.pause(); this.updateMediaSession();
+      this.recover();
     },
 
     /* sleep timer */

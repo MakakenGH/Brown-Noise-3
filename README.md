@@ -12,13 +12,15 @@ A PWA needs HTTPS (or `localhost`). Opening `index.html` from the file system wi
   (GitHub Pages, Cloudflare Pages, Netlify Drop, your own server), open the URL in Chrome, then
   menu > "Install app" (or tap the Install button in the app).
 
-## For rock-solid background playback on Android
+## Background playback on Android
 
-1. Install the app (so it runs as its own window), then press play once. Audio keeps going with the screen off
-   and shows a player in the notification shade / lock screen (play, pause, previous/next preset).
-2. Settings > Apps > Chrome (and the installed "Deep Brown" entry, if listed) > Battery > **Unrestricted**.
-   Aggressive battery savers (Xiaomi, Huawei, Samsung "sleeping apps") can still kill background audio otherwise.
-3. Don't force-close the app from the recents screen while it plays.
+1. Install the app (so it runs as its own window), leave Output set to **Stream**, and press play once.
+   Stream routes the generated audio through Android's media playback path and provides a player in the
+   notification shade / lock screen.
+2. Set battery use to **Unrestricted** for Chrome and the installed Deep Brown app, if Android lists it separately:
+   Settings > Apps > Chrome (or Deep Brown) > App battery usage. Menu names vary by Android version.
+3. Don't force-close the app from the recents screen while it plays. Battery savers and Android may still stop
+   background playback; a web app cannot override the phone's system-level power or audio-focus controls.
 
 ## Output mode
 

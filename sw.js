@@ -1,5 +1,5 @@
 /* Offline shell. Audio is generated on-device, so the app works with no network. */
-const CACHE = 'deep-brown-v3';
+const CACHE = 'deep-brown-v5';
 const ASSETS = [
   './',
   'index.html',
