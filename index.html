@@ -84,20 +84,12 @@
       <div id="timerBtns" class="seg" role="group" aria-label="Stop after"></div>
     </section>
 
-    <section class="route" aria-label="Output mode">
-      <div class="row"><span class="label">Output</span></div>
-      <div id="routeBtns" class="seg two" role="group" aria-label="Output mode">
-        <button type="button" data-mode="direct">Direct</button>
-        <button type="button" data-mode="stream">Stream</button>
-      </div>
-      <p class="desc">Stream keeps playing with the screen off on Android. Direct is the cleanest choice on a computer.</p>
-    </section>
-
     <p class="foot">Deep settings need headphones or a speaker that reaches below 100 Hz. Phone speakers can't reproduce them.</p>
-    <p class="version">Version 1.0</p>
+    <p class="version">Version 1.1</p>
   </main>
 
-  <audio id="sink" playsinline></audio>
+  <audio id="sink" playsinline preload="auto"></audio>
+  <script src="noise-clip.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -1,9 +1,10 @@
 /* Offline shell. Audio is generated on-device, so the app works with no network. */
-const CACHE = 'deep-brown-v7';
+const CACHE = 'deep-brown-v8';
 const ASSETS = [
   './',
   'index.html',
   'styles.css',
+  'noise-clip.js',
   'app.js',
   'noise-processor.js',
   'manifest.webmanifest',

@@ -49,101 +49,38 @@
   };
 
   /* ------------------------------------------------------------------ *
-   * Sound mapping
+   * Sound mapping (shared with the offline renderer in noise-clip.js)
    * ------------------------------------------------------------------ */
-  const cutoffHz   = (d) => 900 * Math.pow(40 / 900, d);   // 900 Hz (shallow) to 40 Hz (abyss)
-  const shelfDb    = (r) => r * 12;
-  const swellCents = (s) => s * 700;
+  const { cutoffHz, shelfDb, swellCents, levelGain } = window.DeepBrownClip;
   const volumeGain = (v) => v * v;                          // audio taper
-  const SHELF_HZ = 90, HP_HZ = 18, FADE_MS = 30000, TARGET_RMS = 0.14;
-
-  /* Loudness model. Computes the RMS of the filtered noise from the filters'
-   * exact frequency responses, so the output level stays constant while depth
-   * and rumble change (instead of getting quieter as you go deeper). */
-  function coeffs(type, f0, qDb, gDb, fs) {
-    const w0 = (2 * Math.PI * f0) / fs, cos = Math.cos(w0), sin = Math.sin(w0);
-    let b0, b1, b2, a0, a1, a2;
-    if (type === 'lowpass' || type === 'highpass') {
-      const alpha = sin / (2 * Math.pow(10, qDb / 20));
-      a0 = 1 + alpha; a1 = -2 * cos; a2 = 1 - alpha;
-      if (type === 'lowpass') { b0 = (1 - cos) / 2; b1 = 1 - cos; b2 = b0; }
-      else { b0 = (1 + cos) / 2; b1 = -(1 + cos); b2 = b0; }
-    } else { // lowshelf, slope 1
-      const A = Math.pow(10, gDb / 40);
-      const k = 2 * Math.sqrt(A) * (sin / 2) * Math.SQRT2;
-      b0 = A * ((A + 1) - (A - 1) * cos + k);
-      b1 = 2 * A * ((A - 1) - (A + 1) * cos);
-      b2 = A * ((A + 1) - (A - 1) * cos - k);
-      a0 = (A + 1) + (A - 1) * cos + k;
-      a1 = -2 * ((A - 1) + (A + 1) * cos);
-      a2 = (A + 1) + (A - 1) * cos - k;
-    }
-    return [b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0];
-  }
-  function mag2(c, w) {
-    const cw = Math.cos(w), sw = Math.sin(w), c2 = Math.cos(2 * w), s2 = Math.sin(2 * w);
-    const nr = c[0] + c[1] * cw + c[2] * c2, ni = -(c[1] * sw + c[2] * s2);
-    const dr = 1 + c[3] * cw + c[4] * c2, di = -(c[3] * sw + c[4] * s2);
-    return (nr * nr + ni * ni) / (dr * dr + di * di);
-  }
-  const Q_BUTTER_DB = -3.0103;   // Web Audio lowpass/highpass Q is in dB
-  const Q_LP2_DB = 1.5;
-  function filterSet(cut, sDb, fs) {
-    return [
-      coeffs('highpass', HP_HZ, Q_BUTTER_DB, 0, fs),
-      coeffs('lowpass', cut, Q_BUTTER_DB, 0, fs),
-      coeffs('lowpass', cut, Q_LP2_DB, 0, fs),
-      coeffs('lowshelf', SHELF_HZ, 0, sDb, fs),
-    ];
-  }
-  function levelGain(cut, sDb, fs = 48000) {
-    const set = filterSet(cut, sDb, fs);
-    const a = Math.exp((-2 * Math.PI * 10) / fs);        // same leak as the worklet
-    const N = 360, f0 = 0.1, f1 = fs / 2 * 0.999, dl = Math.log(f1 / f0) / (N - 1);
-    let num = 0, den = 0;
-    for (let i = 0; i < N; i++) {
-      const f = f0 * Math.exp(i * dl), w = (2 * Math.PI * f) / fs;
-      const psd = 1 / (1 - 2 * a * Math.cos(w) + a * a);
-      let h = 1; for (const c of set) h *= mag2(c, w);
-      num += psd * h * f; den += psd * f;
-    }
-    const rmsPre = 0.5 * Math.sqrt(num / den);
-    return clamp(TARGET_RMS / rmsPre, 0.05, 14);
-  }
+  const FADE_MS = 30000;
 
   /* ------------------------------------------------------------------ *
    * Audio engine
    *
-   * worklet (generator, filters, limiter: all on the audio thread, 64-bit floats)
-   *   -> gate (play/pause fade) -> sleep fade -> output
+   * Foreground: the worklet (generator, filters, limiter on the audio thread)
+   *   -> gate (play/pause fade) -> sleep fade -> output. Live and immediate.
    *
-   * Output route:
-   *   direct  straight to the audio output (cleanest). A silent, looping <audio>
-   *           element runs alongside it so Android treats the page as media
-   *           playback: lock-screen player, and it keeps running with the screen off.
-   *   stream  routed through a MediaStream into the <audio> element. Same background
-   *           behaviour, kept as a fallback in case direct is stopped by a device.
+   * Background: Android suspends Web Audio, and MediaStreams fed from it, as
+   * soon as the PWA is hidden or the screen turns off. It does keep a real
+   * media file playing. So the same worklet is rendered offline to a seamless
+   * WAV (noise-clip.js) and handed to the <audio> element the moment the app
+   * goes to the background; that file is what keeps playing with the screen
+   * off, and it is also what the lock-screen player drives.
    * ------------------------------------------------------------------ */
-  const ROUTE_KEY = 'deepbrown:route3';          // reset older route choices so Android starts in stream mode
-  const isAndroid = /Android/i.test(navigator.userAgent);
-
-  function silentWavUrl() {              // 5 s, 8 kHz mono, +-1 LSB: inaudible but not digital zero
-    const rate = 8000, n = rate * 5, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
-    const w = (o, str) => { for (let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); };
-    w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
-    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
-    v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
-    w(36, 'data'); v.setUint32(40, n * 2, true);
-    for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, ((Math.random() * 3) | 0) - 1, true);
-    return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
-  }
-
   class Engine {
     constructor() {
-      this.ctx = null; this.initP = null; this.busy = false; this.switching = false; this.token = 0;
-      this.el = $('#sink'); this.silent = null; this.streamDest = null;
-      let r = null; try { r = localStorage.getItem(ROUTE_KEY); } catch (_) {}
-      this.route = r === 'direct' || r === 'stream' ? r : (isAndroid ? 'stream' : 'direct');
+      this.ctx = null; this.initP = null; this.busy = false; this.token = 0;
+      this.el = $('#sink');
+      this.clip = null;              // { key, url } rendered background file
+      this.clipP = null;             // render in flight
+      this.clipTimer = 0;
+      this.bgP = null;               // background hand-off in flight
+      this.bg = false;               // the file is the current output
+      this.bgSleep = 0;
+      this.bgFade = 0;
+      this.bgFadeTimer = 0;
+      this.fadeTimer = 0;
     }
 
     init() {
@@ -154,38 +91,23 @@
     async _init() {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC || !window.AudioWorkletNode) throw new Error('unsupported');
-      // direct: biggest buffers. stream: default hint, whose block size matches what the media element pulls.
-      const ctx = new AC(this.route === 'direct' ? { latencyHint: 'playback' } : {});
+      const ctx = new AC({ latencyHint: 'playback' });
       try { await withTimeout(ctx.audioWorklet.addModule('noise-processor.js'), 15000); } catch (e) { ctx.close().catch(() => {}); throw e; }
 
       const node = new AudioWorkletNode(ctx, 'brown-noise', { numberOfInputs: 0, outputChannelCount: [2] });
       const gate = new GainNode(ctx, { gain: 0 });
       const sleepG = new GainNode(ctx, { gain: 1 });
       const analyser = new AnalyserNode(ctx, { fftSize: 2048, smoothingTimeConstant: 0 });
-      node.connect(gate).connect(sleepG);
+      node.connect(gate).connect(sleepG).connect(ctx.destination);
       sleepG.connect(analyser);                          // tap for the scope only
 
       Object.assign(this, { ctx, node, gate, sleepG, analyser });
       this.apply(S);
-      this.connectRoute();
       ctx.addEventListener('statechange', () => app.onContextState());
     }
 
-    connectRoute() {
-      const el = this.el;
-      if (this.route === 'stream') {
-        this.streamDest = this.ctx.createMediaStreamDestination();
-        this.sleepG.connect(this.streamDest);
-        el.loop = false; el.removeAttribute('src'); el.srcObject = this.streamDest.stream;
-      } else {
-        this.sleepG.connect(this.ctx.destination);
-        if (!this.silent) this.silent = silentWavUrl();
-        el.srcObject = null; el.loop = true; el.src = this.silent;
-        try { el.load(); } catch (_) {}
-      }
-    }
-
     apply(s) {
+      if (this.bg) this.el.volume = volumeGain(s.volume);
       if (!this.ctx) return;
       const t = this.ctx.currentTime, P = this.node.parameters;
       const cut = cutoffHz(s.deep), sDb = shelfDb(s.rumble);
@@ -197,28 +119,210 @@
       P.get('volume').setValueAtTime(volumeGain(s.volume), t);   // smoothed per sample inside the worklet
     }
 
-    async teardown() {
-      const ctx = this.ctx;
-      this.token++;
-      this.ctx = null; this.initP = null; this.streamDest = null;
-      this.node = this.gate = this.sleepG = this.analyser = null;
-      try { this.el.pause(); } catch (_) {}
-      this.el.srcObject = null; this.el.removeAttribute('src');
-      try { this.el.load(); } catch (_) {}       // drop the old media session / source
-      if (ctx) { try { await ctx.close(); } catch (_) {} }
+    /* ---- background file ------------------------------------------- */
+    clipKey(s) { return [s.deep, s.rumble, s.width, s.swell].map((v) => v.toFixed(3)).join('|'); }
+
+    prepareClip() {
+      const key = this.clipKey(S);
+      if (this.clip && this.clip.key === key) return Promise.resolve(this.clip);
+      if (this.clipP && this.clipP.key === key) return this.clipP.promise;
+      const snap = { deep: S.deep, rumble: S.rumble, width: S.width, swell: S.swell };
+      const entry = { key };
+      entry.promise = window.DeepBrownClip.renderWav(snap).then((url) => {
+        const old = this.clip;
+        this.clip = { key, url };
+        if (!this.bg) this.loadElement(this.clip);       // warm it up for a fast hand-off
+        if (old && old.url && old.url !== url && this.el.src !== old.url) URL.revokeObjectURL(old.url);
+        if (this.clipP === entry) this.clipP = null;
+        return this.clip;
+      }, (e) => {
+        if (this.clipP === entry) this.clipP = null;
+        throw e;
+      });
+      entry.promise.catch(() => {});                     // a caller may have timed out and walked away
+      this.clipP = entry;
+      return entry.promise;
     }
 
-    async setRoute(mode, persist = false) {
-      if (persist) { try { localStorage.setItem(ROUTE_KEY, mode); } catch (_) {} }
-      if (mode === this.route) return;
-      this.route = mode;
-      if (!this.ctx) return;                     // nothing built yet: the next play uses the new route
-      this.switching = true;
+    /* Re-render the background file shortly after the sound changes, so that
+     * hiding the app is instant instead of waiting for a render. */
+    queueClip() {
+      clearTimeout(this.clipTimer); this.clipTimer = 0;
+      if (!app.wanted || document.hidden) return;
+      if (this.clip && this.clip.key === this.clipKey(S)) return;
+      this.clipTimer = setTimeout(() => {
+        this.clipTimer = 0;
+        if (!app.wanted || document.hidden) return;
+        this.prepareClip().catch((e) => console.warn('Deep Brown: could not render the background clip', e));
+      }, 700);
+    }
+
+    loadElement(clip) {
+      if (this.el.src === clip.url) return;
+      this.el.src = clip.url;
+      try { this.el.load(); } catch (_) {}
+    }
+
+    async _startBackground() {
+      if (!app.wanted || !document.hidden) return false;
+      const key = this.clipKey(S);
+      let clip = this.clip;
+      if (!clip) {
+        try { clip = await withTimeout(this.prepareClip(), 3000); }
+        catch (e) { clip = this.clip; }                   // a slightly older file beats silence
+      }
+      if (!clip) return false;
+      if (!app.wanted || !document.hidden) return false;
+
+      const el = this.el;
+      this.bg = true;
+      this.stopElementFade();
+      el.loop = true;
+      el.volume = volumeGain(S.volume);
+      const prev = el.src;
+      this.loadElement(clip);
+      if (prev.startsWith('blob:') && prev !== clip.url) URL.revokeObjectURL(prev);
+      const dur = el.duration;
+      if (Number.isFinite(dur) && dur > 0) el.currentTime = Math.random() * dur;
+      try { await withTimeout(el.play(), 6000); }
+      catch (e) {
+        console.warn('Deep Brown: the background media element did not start', e);
+        this.bg = false;
+        return false;
+      }
+      if (!app.wanted || !document.hidden) {   // paused or shown while play() was pending
+        this.bg = false;
+        try { el.pause(); } catch (_) {}
+        if (app.wanted) this.enterForeground().catch(() => {});
+        return false;
+      }
+      this.muteForeground(0.2);
+      this.armBgSleep();
+      app.updateMediaSession();
+      // The current sound changed a moment ago: start with the file at hand,
+      // then swap in the correct one as soon as it has rendered.
+      if (clip.key !== key) {
+        this.prepareClip().then(() => this.refreshBackgroundClip()).catch(() => {});
+      }
+      return true;
+    }
+
+    startBackground() {
+      if (this.bg && this.el && !this.el.paused) return Promise.resolve(true);
+      if (this.bgP) return this.bgP;
+      this.bgP = this._startBackground().finally(() => { this.bgP = null; });
+      return this.bgP;
+    }
+
+    /* A preset from the lock screen can change the sound while the app is
+     * hidden. Render the new file and swap it in; playback resumes as soon as
+     * the new blob is ready, without waiting for JS timers. */
+    async refreshBackgroundClip() {
+      if (!this.bg) return;
+      let clip;
+      try { clip = await this.prepareClip(); } catch (_) { return; }
+      const el = this.el;
+      if (!this.bg || el.src === clip.url) return;
+      const old = el.src;
+      this.loadElement(clip);
       try {
-        await this.teardown();
-        if (app.wanted) { await this.start(); app.scheduleTimer(); }
-      } catch (_) { /* the watchdog / play button recover */ }
-      setTimeout(() => { this.switching = false; }, 500);
+        el.volume = volumeGain(S.volume);
+        await el.play();
+      } catch (_) { /* recover() restarts playback */ }
+      if (old.startsWith('blob:') && old !== clip.url) URL.revokeObjectURL(old);
+      this.armBgSleep();
+      app.updateMediaSession();
+    }
+
+    /* The file starts in the same instant; the live engine fades out under it.
+     * Suspending the context a moment later keeps the phone from running the
+     * worklet for a sound nobody hears. */
+    muteForeground(sec) {
+      const ctx = this.ctx;
+      if (!ctx || ctx.state === 'closed') return;
+      const t = ctx.currentTime, g = this.gate.gain;
+      g.cancelScheduledValues(t);
+      g.setValueAtTime(g.value, t);
+      g.linearRampToValueAtTime(0, t + sec);
+      setTimeout(() => {
+        if (this.bg && this.ctx === ctx && ctx.state === 'running') ctx.suspend().catch(() => {});
+      }, 1400);
+    }
+
+    armBgSleep() {
+      this.clearBgSleep();
+      const rem = app.timerEnd - Date.now();
+      if (!app.timerEnd || rem <= 0) return;
+      const fadeFrom = () => {
+        if (!this.bg) return;
+        const t0 = Date.now(), from = this.el.volume, fadeMs = Math.min(FADE_MS, rem);
+        this.bgFade = setInterval(() => {
+          if (!this.bg) { this.clearBgSleep(); return; }
+          const k = Math.min(1, (Date.now() - t0) / fadeMs);
+          this.el.volume = Math.max(0, from * (1 - k));
+          if (k >= 1) { clearInterval(this.bgFade); this.bgFade = 0; }
+        }, 1000);                                  // background timers are throttled anyway
+      };
+      if (rem > FADE_MS) this.bgFadeTimer = setTimeout(fadeFrom, rem - FADE_MS);
+      else fadeFrom();
+      this.bgSleep = setTimeout(() => {
+        this.clearBgSleep();
+        if (this.bg && app.wanted) app.pause();
+      }, rem);
+    }
+
+    clearBgSleep() {
+      clearTimeout(this.bgSleep); this.bgSleep = 0;
+      clearTimeout(this.bgFadeTimer); this.bgFadeTimer = 0;
+      clearInterval(this.bgFade); this.bgFade = 0;
+    }
+
+    stopElementFade() {
+      clearInterval(this.fadeTimer); this.fadeTimer = 0;
+    }
+
+    /* Fade the file out before the live engine takes over again. */
+    fadeElementOut() {
+      this.stopElementFade();
+      const el = this.el, target = volumeGain(S.volume);
+      if (el.paused) { el.volume = target; return; }
+      const from = el.volume || target, t0 = performance.now();
+      this.fadeTimer = setInterval(() => {
+        const k = Math.min(1, (performance.now() - t0) / 250);
+        el.volume = Math.max(0, from * (1 - k));
+        if (k >= 1) {
+          this.stopElementFade();
+          try { el.pause(); } catch (_) {}
+          el.volume = target;
+        }
+      }, 25);
+    }
+
+    /* ---- foreground engine ----------------------------------------- */
+    stopElement() {
+      if (this.fadeTimer) return;                        // already on its way out
+      const el = this.el;
+      if (!el.paused) { try { el.pause(); } catch (_) {} }
+      el.volume = volumeGain(S.volume);
+    }
+
+    async startForeground(token) {
+      if (this.ctx && this.ctx.state === 'closed') await this.teardown();
+      await this.init();
+      if (token !== undefined && token !== this.token) return;
+      const ctx = this.ctx;
+      this.bg = false;
+      this.clearBgSleep();
+      this.stopElement();
+      this.apply(S);
+      if (ctx.state !== 'running') await withTimeout(ctx.resume(), 8000);
+      if (token !== undefined && token !== this.token) return;   // paused while resuming
+      const t = ctx.currentTime, g = this.gate.gain;
+      g.cancelScheduledValues(t);
+      g.setValueAtTime(0, t);
+      g.linearRampToValueAtTime(1, t + 0.7);             // fade in: no click
+      if (this.clip && this.clip.key === this.clipKey(S)) return;   // already warm
+      this.prepareClip().catch((e) => console.warn('Deep Brown: could not render the background clip', e));
     }
 
     async start() {
@@ -226,36 +330,52 @@
       const token = ++this.token;
       this.busy = true;
       try {
-        await this.init();
-        if (token !== this.token) return;
-        const { ctx, gate, el } = this;
-        this.apply(S);
-        if (ctx.state !== 'running') await withTimeout(ctx.resume(), 8000);
-        const t = ctx.currentTime;
-        gate.gain.cancelScheduledValues(t);
-        gate.gain.setValueAtTime(0, t);
-        gate.gain.linearRampToValueAtTime(1, t + 0.7);   // fade in: no click
-        try { await withTimeout(el.play(), 8000); }
-        catch (e) {
-          console.warn('Deep Brown: the media element did not start', e);
-          if (this.route === 'stream') throw e;   // on the stream route this element is the output
-        }
+        if (document.hidden && await this.startBackground()) return;
+        await this.startForeground(token);
       } finally { this.busy = false; }
     }
 
+    async enterForeground() {
+      if (!app.wanted) { this.bg = false; this.stopElementFade(); this.stopElement(); return; }
+      this.bg = false;
+      this.clearBgSleep();
+      this.fadeElementOut();
+      await this.startForeground();                      // resumes or rebuilds the live engine
+      app.scheduleTimer();
+    }
+
     async pause() {
-      if (!this.ctx) return;
+      this.bg = false;
+      this.clearBgSleep();
+      this.stopElementFade();
+      const el = this.el;
+      try { el.pause(); } catch (_) {}
+      el.volume = volumeGain(S.volume);
+      if (!this.ctx) { this.resetSleepFade(); return; }
       const token = ++this.token;
-      const { ctx, gate, el } = this;
+      const { ctx, gate } = this;
       const t = ctx.currentTime;
       gate.gain.cancelScheduledValues(t);
-      gate.gain.setValueAtTime(gate.gain.value, t);
+      gate.gain.setValueAtTime(gate.gain.value || 0, t);
       gate.gain.linearRampToValueAtTime(0, t + 0.25);
       await sleep(320);
       if (token !== this.token || ctx !== this.ctx) return;   // user pressed play again / engine rebuilt
-      try { el.pause(); } catch (_) {}
       try { await ctx.suspend(); } catch (_) {}
       this.resetSleepFade();
+    }
+
+    async teardown() {
+      const ctx = this.ctx;
+      this.token++;
+      this.ctx = null; this.initP = null;
+      this.node = this.gate = this.sleepG = this.analyser = null;
+      this.bg = false;
+      this.clearBgSleep();
+      this.stopElementFade();
+      try { this.el.pause(); } catch (_) {}
+      this.el.removeAttribute('src');
+      try { this.el.load(); } catch (_) {}       // drop the old media session / source
+      if (ctx) { try { await ctx.close(); } catch (_) {} }
     }
 
     /* Schedules the whole sleep timer on the audio thread, so it still fades
@@ -406,14 +526,17 @@
     mediaMeta: null,
 
     /* Android hides the page both when the PWA is minimized and when the
-     * screen turns off. Never suspend the context here: the audio thread has
-     * to keep running, and suspending it is exactly what used to stop
-     * background playback. On return we just re-check everything. */
+     * screen turns off. Web Audio does not survive that, so a file rendered
+     * from the same sound takes over; coming back hands the output to the
+     * live engine again. */
     handleVisibilityChange() {
-      if (document.hidden) return;
+      if (document.hidden) {
+        if (this.wanted) engine.startBackground().catch((e) => console.warn('Deep Brown: background playback did not start', e));
+        return;
+      }
       this.cancelRetry();
       this.nextAttempt = 0;           // coming back to the foreground is a good moment to retry
-      this.recover();
+      engine.enterForeground().catch((e) => this.noteFailure(e));
       this.renderPlay();
       this.renderTimer();
       scope.draw(performance.now());
@@ -428,6 +551,7 @@
     set(key, v) {
       S[key] = clamp(v);
       engine.apply(S);
+      engine.queueClip();                     // keep the background file in step
       this.render(); save();
       if (key === 'deep') this.dismissHint();
       this.updateMediaSession();
@@ -435,7 +559,8 @@
     applyPreset(id) {
       const p = PRESETS.find((p) => p.id === id); if (!p) return;
       for (const k of ['deep', 'rumble', 'width', 'swell']) S[k] = p[k];
-      engine.apply(S); this.render(); save(); this.updateMediaSession();
+      engine.apply(S); engine.queueClip(); this.render(); save(); this.updateMediaSession();
+      if (engine.bg) engine.refreshBackgroundClip().catch(() => {});
     },
     stepPreset(dir) {
       const i = PRESETS.findIndex((p) => p.id === this.presetId());
@@ -476,14 +601,19 @@
     },
 
     /* playback */
-    async play() {
+    play() {
       if (engine.busy) return;
       // "wanted" can be true while playback is actually dead (a failed
       // background recovery). Only skip when the engine really is running.
-      if (this.wanted && engine.ctx && engine.ctx.state === 'running' && !engine.el.paused) return;
+      const running = engine.bg ? (engine.el && !engine.el.paused)
+                                : (engine.ctx && engine.ctx.state === 'running');
+      if (this.wanted && running) return;
       this.wanted = true; this.errorText = ''; this.failures = 0; this.nextAttempt = 0;
       this.cancelRetry(); this.holdLock(); this.renderPlay(); scope.run();
       this.updateMediaSession();
+      this.startEngine();
+    },
+    async startEngine() {
       try { await engine.start(); this.scheduleTimer(); }
       catch (e) {
         this.wanted = false; this.releaseLock();
@@ -518,30 +648,24 @@
     },
     noteFailure(e) {
       console.warn('Deep Brown: playback did not recover', e);
-      if (engine.ctx && engine.ctx.state === 'running' && !engine.el.paused) {
-        this.failures = 0; this.nextAttempt = 0; return;   // it came back on its own
-      }
+      const running = engine.bg ? (engine.el && !engine.el.paused)
+                                : (engine.ctx && engine.ctx.state === 'running');
+      if (running) { this.failures = 0; this.nextAttempt = 0; return; }   // it came back on its own
       this.failures++;
       this.nextAttempt = Date.now() + Math.min(30000, 1000 * Math.pow(2, this.failures));
       if (this.failures >= 5) this.giveUp();               // stop fighting the system forever
     },
     async recover() {
-      if (!this.wanted || engine.busy || engine.switching || this.recovering) return;
+      if (!this.wanted || engine.busy || this.recovering) return;
       if (Date.now() < this.nextAttempt) return;
       this.recovering = true;
       try {
-        if (!engine.ctx || engine.ctx.state === 'closed') {
-          throw new Error('audio context is gone');     // rebuilding needs a user gesture
-        }
-        if (engine.ctx.state !== 'running') await withTimeout(engine.ctx.resume(), 8000);
-        if (engine.el.paused) {
-          try { await withTimeout(engine.el.play(), 8000); }
-          catch (e) {
-            // On the direct route the element only backs the media session;
-            // the sound itself does not depend on it.
-            if (engine.route === 'stream') throw e;
-            console.warn('Deep Brown: the media element did not restart', e);
+        if (document.hidden) {
+          if (!engine.bg || engine.el.paused) {
+            if (!(await engine.startBackground())) throw new Error('the background file is not playing');
           }
+        } else if (engine.bg || !engine.ctx || engine.ctx.state !== 'running') {
+          await engine.enterForeground();
         }
         this.failures = 0; this.nextAttempt = 0;
         if (this.errorText) { this.errorText = ''; this.renderPlay(); }
@@ -549,11 +673,13 @@
         this.noteFailure(e);
       } finally { this.recovering = false; }
     },
-    onContextState() { if (this.wanted && engine.ctx && engine.ctx.state !== 'running') this.recover(); },
-    onElementPause() {          // Android pauses the element for audio focus changes, calls, Bluetooth swaps and backgrounding
-      if (!this.wanted || engine.busy || engine.switching) return;
+    onContextState() {                 // a hidden context is expected to sleep while the file plays
+      if (!document.hidden && this.wanted && engine.ctx && engine.ctx.state !== 'running') this.recover();
+    },
+    onElementPause() {          // Android pauses the file for audio focus changes, calls and Bluetooth swaps
+      if (!this.wanted || engine.busy || !engine.bg) return;
       if (this.retryTimer) return;
-      if (engine.route === 'stream' && this.pauseRetries >= 6) { this.giveUp(); return; }   // the system keeps stopping us
+      if (this.pauseRetries >= 6) { this.giveUp(); return; }   // the system keeps stopping us
       const delay = Math.min(8000, 500 * Math.pow(2, this.pauseRetries));
       this.retryTimer = setTimeout(() => {
         this.retryTimer = 0;
@@ -567,7 +693,8 @@
     scheduleTimer() {
       const rem = this.timerEnd - Date.now();
       if (!this.timerEnd || rem <= 0) { this.clearTimer(); engine.resetSleepFade(); return; }
-      engine.scheduleSleepStop(rem);
+      engine.scheduleSleepStop(rem);           // exact fade while the live engine plays
+      engine.armBgSleep();                     // and a deadline for the background file
     },
     setTimer(min) {
       this.timerMin = min; this.timerEnd = min ? Date.now() + min * 60000 : 0;
@@ -625,11 +752,7 @@
     b.addEventListener('click', () => app.setTimer(min));
     el.timerBtns.appendChild(b);
   }
-  // output route
-  const routeBtns = $('#routeBtns');
-  const renderRoute = () => { for (const b of routeBtns.children) b.setAttribute('aria-pressed', String(b.dataset.mode === engine.route)); };
-  for (const b of routeBtns.children) b.addEventListener('click', () => { engine.setRoute(b.dataset.mode, true); renderRoute(); });
-  renderRoute();
+  // output route no longer exists: the foreground uses Web Audio, the background a rendered file
   // sliders
   for (const k of SLIDERS) $('#' + k).addEventListener('input', (e) => app.set(k, e.target.value / 100));
   // transport

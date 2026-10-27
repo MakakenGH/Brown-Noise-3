@@ -131,7 +131,6 @@ input[type="range"]::-moz-range-thumb {
 /* Sleep timer */
 .timer .row { margin-bottom: 8px; }
 .timer .left { font-weight: 500; color: var(--accent); font-variant-numeric: tabular-nums; }
-.seg.two { grid-template-columns: repeat(2, 1fr); }
 .seg { display: grid; grid-template-columns: repeat(5, 1fr); background: var(--chip); border-radius: 14px; padding: 4px; gap: 4px; }
 .seg button {
   min-height: 44px; border: 0; border-radius: 10px; background: transparent; cursor: pointer; font-weight: 500;
@@ -139,8 +138,6 @@ input[type="range"]::-moz-range-thumb {
 }
 .seg button[aria-pressed="true"] { background: var(--sand); color: #2a1a10; }
 
-.route .row { display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 8px; }
-.route .desc { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
 .foot { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
 .version { margin: -12px 0 0; color: var(--muted); font-size: 12px; text-align: center; }
 
