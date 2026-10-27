@@ -4,6 +4,39 @@ Brown noise is generated live on the device (an AudioWorklet, off the main threa
 while it plays and it never repeats. Works offline once loaded. When the app is hidden, a seamlessly looping
 90-second render of the same sound takes over so playback can continue with the screen off.
 
+## Native Android app (recommended for overnight use)
+
+A web app cannot guarantee audio through a whole night: Chrome may freeze or kill the page, and a PWA has no
+foreground service. The `android/` folder contains a small native Android app that fixes that:
+
+* the noise is generated natively and played by an `AudioTrack` from a foreground media service,
+* it keeps playing when the app is minimized, the screen is off, or the activity is gone,
+* it works over Bluetooth with lock-screen/headset controls,
+* a sleep timer fades out and stops the service,
+* it has no `INTERNET` permission, so it is fully offline.
+
+Install `dist/deep-brown.apk` on the phone (allow “install unknown apps” for the file manager), or connect it with
+USB debugging enabled and run:
+
+```
+/tmp/opencode/toolchain/android-sdk/platform-tools/adb install -r dist/deep-brown.apk
+```
+
+The app keeps the same six presets and remembers the last selected one. The persistent playback notification is
+required by Android for continuous background audio; use its **Stop** action to end playback. If your phone has
+aggressive battery management, set Deep Brown to **Unrestricted** (Settings → Apps → Deep Brown → App battery
+usage).
+
+Build it yourself with JDK 17 and Android SDK 35:
+
+```
+cd android
+./gradlew assembleRelease
+# app/build/outputs/apk/release/app-release.apk
+```
+
+(`assembleDebug` also works for development.)
+
 ## Run it
 
 A PWA needs HTTPS (or `localhost`). Opening `index.html` from the file system will not work.
@@ -32,9 +65,10 @@ app hands over instantly.
 
 ## Files
 
-index.html, styles.css, app.js        the app
-noise-processor.js                    the noise generator (audio thread)
-noise-clip.js                         sound mapping and the background WAV render
-sw.js, manifest.webmanifest, icons/   offline + installability
+index.html, styles.css, app.js        the PWA
+noise-processor.js                    the PWA's noise generator (audio thread)
+noise-clip.js                         PWA sound mapping and the background WAV render
+android/                              native Android app for reliable background playback
+sw.js, manifest.webmanifest, icons/   PWA offline + installability
 
 When you change any file, bump `CACHE` in sw.js so installed copies pick up the update on next launch.
