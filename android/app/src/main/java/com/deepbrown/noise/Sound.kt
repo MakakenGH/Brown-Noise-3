@@ -59,7 +59,7 @@ object Presets {
 
     fun byId(id: String?): Preset? = all.firstOrNull { it.id == id }
 
-    /** Same tolerance as the web app: a preset is active only when all four shape controls match. */
+    /** A preset is active only when all four shape controls match. */
     fun match(p: Params): Preset? = all.firstOrNull {
         abs(p.deep - it.deep) < 0.006f &&
             abs(p.rumble - it.rumble) < 0.006f &&
@@ -89,7 +89,7 @@ object Sound {
 
     /* Loudness model: the RMS of the filtered noise from the filters' exact
      * frequency responses, so the level stays even while depth and rumble
-     * change. Ported one-to-one from noise-clip.js. */
+     * change. */
     fun levelGain(cut: Double, shelf: Double, fs: Int = 48000): Double {
         val filters = filterSet(cut, shelf, fs)
         val a = exp(-2.0 * PI * 10.0 / fs)

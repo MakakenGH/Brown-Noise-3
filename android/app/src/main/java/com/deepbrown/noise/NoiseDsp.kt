@@ -11,7 +11,7 @@ import kotlin.math.tanh
 import kotlin.random.Random
 
 /**
- * The brown-noise generator and filter chain, ported from noise-processor.js.
+ * The brown-noise generator and filter chain.
  *
  * It is pure Kotlin (no Android types) so it can be unit-tested on the JVM.
  * [render] is called from one audio thread only; parameter setters may be

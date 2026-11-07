@@ -80,7 +80,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /* ---------------------------------------------------------------------- *
- * Palette and theme (taken from the web app's styles.css)
+ * Palette and theme
  * ---------------------------------------------------------------------- */
 private val Bg = Color(0xFF120C09)
 private val Sand = Color(0xFFF0E2CF)
