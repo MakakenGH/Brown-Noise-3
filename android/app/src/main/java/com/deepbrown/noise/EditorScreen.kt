@@ -1,7 +1,11 @@
 package com.deepbrown.noise
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -17,14 +21,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -35,20 +40,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
@@ -58,6 +66,7 @@ fun EditorScreen(
     initial: Draft,
     editing: Boolean,
     previewing: Boolean,
+    scope: () -> FloatArray?,
     onDraftChanged: (Draft) -> Unit,
     onBack: () -> Unit,
     onSave: (Draft) -> Unit,
@@ -65,44 +74,71 @@ fun EditorScreen(
 ) {
     var draft by remember(initial) { mutableStateOf(initial) }
     var showNameSheet by remember { mutableStateOf(false) }
+    var showDiscard by remember { mutableStateOf(false) }
+    val accent by androidx.compose.animation.animateColorAsState(
+        targetValue = draft.color.dot,
+        animationSpec = tween(450),
+        label = "editor accent",
+    )
 
     fun update(next: Draft) {
         draft = next
         onDraftChanged(next)
     }
 
+    fun requestBack() {
+        if (draft != initial) showDiscard = true else onBack()
+    }
+
+    BackHandler { requestBack() }
+
     Box(Modifier.fillMaxSize().background(Bg)) {
+        NoiseAura(
+            color = draft.color.dot,
+            playing = previewing,
+            modifier = Modifier.fillMaxSize(),
+        )
+
         Column(Modifier.fillMaxSize()) {
             Row(
                 Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
                     .height(64.dp)
-                    .padding(horizontal = 8.dp),
+                    .padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(SurfaceHigh)
+                        .border(1.dp, Hairline, CircleShape)
+                        .clickable { requestBack() },
+                    contentAlignment = Alignment.Center,
+                ) {
                     Icon(
                         Icons.Default.KeyboardArrowDown,
                         contentDescription = "Back",
                         tint = OnSurface,
-                        modifier = Modifier.size(26.dp),
+                        modifier = Modifier.size(24.dp),
                     )
                 }
                 Text(
-                    text = "Noise Generator",
+                    text = if (editing) "Edit sound" else "New sound",
                     modifier = Modifier.weight(1f),
                     fontFamily = Fraunces,
-                    fontSize = 22.sp,
-                    lineHeight = 28.sp,
-                    textAlign = TextAlign.Center,
+                    fontSize = 20.sp,
+                    lineHeight = 26.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     color = OnSurface,
                 )
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(OnSurface)
+                        .size(44.dp)
+                        .shadow(14.dp, CircleShape)
+                        .clip(CircleShape)
+                        .background(accent)
                         .clickable {
                             if (draft.name.isBlank()) showNameSheet = true else onSave(draft)
                         },
@@ -110,7 +146,6 @@ fun EditorScreen(
                 ) {
                     Icon(Icons.Default.Check, contentDescription = "Save", tint = Ink, modifier = Modifier.size(20.dp))
                 }
-                Spacer(Modifier.width(8.dp))
             }
 
             Column(
@@ -118,88 +153,140 @@ fun EditorScreen(
                     .weight(1f)
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 8.dp, bottom = 140.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
                 DeepnessField(
                     draft = draft,
+                    previewing = previewing,
+                    scope = scope,
                     onChange = { update(draft.copy(deep = it)) },
                 )
                 ColorSelector(
                     selected = draft.color,
                     onSelect = { update(draft.copy(color = it)) },
                 )
-                NoiseSlider(
-                    label = "Rumble",
-                    value = draft.rumble,
-                    description = "Extra weight below 90 Hz",
-                    onChange = { update(draft.copy(rumble = it)) },
-                )
-                NoiseSlider(
-                    label = "Width",
-                    value = draft.width,
-                    description = "From centred to enveloping",
-                    onChange = { update(draft.copy(width = it)) },
-                )
-                NoiseSlider(
-                    label = "Swell",
-                    value = draft.swell,
-                    description = "Slow, never-repeating breathing",
-                    onChange = { update(draft.copy(swell = it)) },
-                )
-                Spacer(Modifier.height(8.dp))
-            }
-
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .background(Bg)
-                    .navigationBarsPadding(),
-            ) {
-                DividerLine()
-                Row(
+                Column(
                     Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Surface)
+                        .border(1.dp, Hairline, RoundedCornerShape(24.dp)),
                 ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            text = if (editing) "Currently editing" else "Currently creating",
-                            fontFamily = DmSans,
-                            fontSize = 11.sp,
-                            color = LabelMuted,
-                        )
-                        Text(
-                            text = if (editing) draft.name else "Currently creating",
-                            fontFamily = Fraunces,
-                            fontSize = 22.sp,
-                            lineHeight = 28.sp,
-                            color = OnSurface,
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Track)
-                            .clickable { onTogglePreview(draft) }
-                            .semantics { contentDescription = if (previewing) "Pause preview" else "Play preview" },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        PlayPauseIcon(previewing, OnSurface, 20.dp)
-                    }
+                    ParameterRow(
+                        label = "Rumble",
+                        value = draft.rumble,
+                        description = "Extra weight below 90 Hz",
+                        accent = draft.color.dot,
+                        onChange = { update(draft.copy(rumble = it)) },
+                    )
+                    HairlineDivider(startPadding = 18.dp)
+                    ParameterRow(
+                        label = "Width",
+                        value = draft.width,
+                        description = "From centred to enveloping",
+                        accent = draft.color.dot,
+                        onChange = { update(draft.copy(width = it)) },
+                    )
+                    HairlineDivider(startPadding = 18.dp)
+                    ParameterRow(
+                        label = "Swell",
+                        value = draft.swell,
+                        description = "Slow, never-repeating breathing",
+                        accent = draft.color.dot,
+                        onChange = { update(draft.copy(swell = it)) },
+                    )
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+                .fillMaxWidth()
+                .height(76.dp)
+                .shadow(
+                    elevation = 22.dp,
+                    shape = RoundedCornerShape(24.dp),
+                    clip = false,
+                    ambientColor = Color.Black,
+                    spotColor = Color.Black,
+                )
+                .clip(RoundedCornerShape(24.dp))
+                .background(SurfaceHigh)
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(accent.copy(alpha = 0.16f), SurfaceHigh, SurfaceHigh),
+                    ),
+                )
+                .border(1.dp, accent.copy(alpha = 0.26f), RoundedCornerShape(24.dp))
+                .clickable { onTogglePreview(draft) }
+                .padding(start = 14.dp, end = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ColorOrb(accent, 34.dp, ring = true)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = if (previewing) "Previewing" else "Preview",
+                    fontFamily = DmSans,
+                    fontSize = 10.5.sp,
+                    color = LabelMuted,
+                )
+                Text(
+                    text = draft.name.ifBlank { "Untitled sound" },
+                    fontFamily = Fraunces,
+                    fontSize = 17.sp,
+                    lineHeight = 22.sp,
+                    color = OnSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            LiveWaveform(
+                color = accent,
+                playing = previewing,
+                scope = scope,
+                modifier = Modifier
+                    .width(42.dp)
+                    .height(18.dp)
+                    .padding(end = 10.dp),
+            )
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(accent)
+                    .semantics { contentDescription = if (previewing) "Pause preview" else "Play preview" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Crossfade(previewing, animationSpec = tween(180), label = "preview state") { playing ->
+                    PlayPauseIcon(playing, Ink, 19.dp)
                 }
             }
         }
     }
 
+    if (showDiscard) {
+        ConfirmDialog(
+            title = "Discard changes?",
+            message = "Your edits to this sound will be lost.",
+            confirmLabel = "Discard",
+            onConfirm = onBack,
+            onDismiss = { showDiscard = false },
+        )
+    }
+
     if (showNameSheet) {
         NameSheet(
-            title = "Give your sound a name",
+            title = "Name your sound",
             initial = draft.name,
-            placeholder = "Placeholder text",
-            confirmLabel = "Save Changes",
+            placeholder = "e.g. Deep velvet",
+            confirmLabel = "Save sound",
+            accent = accent,
             onSave = { name ->
                 val named = draft.copy(name = name)
                 draft = named
@@ -214,83 +301,144 @@ fun EditorScreen(
 @Composable
 private fun DeepnessField(
     draft: Draft,
+    previewing: Boolean,
+    scope: () -> FloatArray?,
     onChange: (Float) -> Unit,
 ) {
     val currentDraft by rememberUpdatedState(draft)
     val currentOnChange by rememberUpdatedState(onChange)
-    val deep = draft.deep
+    val feedback = LocalHapticFeedback.current
+    var lastStep by remember { mutableStateOf((draft.deep * 100).roundToInt()) }
+    var touched by remember { mutableStateOf(false) }
+    val accent = draft.color.dot
+    val handleY = draft.deep
 
     Box(
         Modifier
             .fillMaxWidth()
-            .height(240.dp)
-            .clip(RoundedCornerShape(28.dp))
-            .background(
-                Brush.verticalGradient(
-                    listOf(Color(0xFF100630), Color(0xFF322A4D)),
-                ),
-            )
+            .height(268.dp)
+            .clip(RoundedCornerShape(32.dp))
+            .background(Brush.verticalGradient(listOf(Color(0xFF1B1238), Color(0xFF0D071E))))
+            .border(1.dp, Hairline, RoundedCornerShape(32.dp))
             .pointerInput(Unit) {
-                detectVerticalDragGestures { change, dy ->
-                    change.consume()
-                    val next = (currentDraft.deep + dy / size.height.toFloat()).coerceIn(0f, 1f)
-                    currentOnChange(next)
-                }
+                detectVerticalDragGestures(
+                    onDragStart = { touched = true },
+                    onVerticalDrag = { change, dy ->
+                        change.consume()
+                        val next = (currentDraft.deep + dy / size.height.toFloat()).coerceIn(0f, 1f)
+                        val step = (next * 100).roundToInt()
+                        if (step / 10 != lastStep / 10) {
+                            lastStep = step
+                            feedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
+                        currentOnChange(next)
+                    },
+                )
             }
             .semantics {
                 contentDescription = "Deepness"
-                progressBarRangeInfo = ProgressBarRangeInfo(deep, 0f..1f)
+                progressBarRangeInfo = ProgressBarRangeInfo(draft.deep, 0f..1f)
                 setProgress {
                     currentOnChange(it.coerceIn(0f, 1f))
                     true
                 }
             },
     ) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .drawBehind {
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colors = listOf(accent.copy(alpha = 0.30f), Color.Transparent),
+                            center = Offset(size.width * 0.88f, 0f),
+                            radius = size.width * 1.05f,
+                        ),
+                    )
+                },
+        )
+
+        LiveWaveform(
+            color = accent,
+            playing = previewing,
+            scope = scope,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(84.dp)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+        )
+
         Canvas(Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
-            val top = 18.dp.toPx()
-            val bottom = h - 18.dp.toPx()
-            val ticks = 12
+            val top = 30.dp.toPx()
+            val bottom = h - 100.dp.toPx()
+            val ticks = 16
             for (i in 0 until ticks) {
                 val y = top + (bottom - top) * i / (ticks - 1)
+                val major = i % 4 == 0
                 drawLine(
-                    color = OnSurfaceVariant.copy(alpha = 0.40f),
-                    start = Offset(w - 30.dp.toPx(), y),
-                    end = Offset(w - 12.dp.toPx(), y),
+                    color = OnSurfaceVariant.copy(alpha = if (major) 0.45f else 0.24f),
+                    start = Offset(w - if (major) 34.dp.toPx() else 26.dp.toPx(), y),
+                    end = Offset(w - 18.dp.toPx(), y),
                     strokeWidth = 1.dp.toPx(),
                 )
             }
-            val handleY = top + (bottom - top) * deep
+            val y = top + (bottom - top) * handleY
             drawRoundRect(
                 color = OnSurface,
-                topLeft = Offset(w - 40.dp.toPx(), handleY - 1.5.dp.toPx()),
-                size = Size(28.dp.toPx(), 3.dp.toPx()),
+                topLeft = Offset(w - 44.dp.toPx(), y - 1.5.dp.toPx()),
+                size = Size(30.dp.toPx(), 3.dp.toPx()),
                 cornerRadius = CornerRadius(1.5.dp.toPx()),
+            )
+            drawCircle(
+                color = OnSurface,
+                radius = 2.5.dp.toPx(),
+                center = Offset(w - 16.dp.toPx(), y),
             )
         }
 
         Column(
             Modifier
                 .align(Alignment.TopStart)
-                .padding(16.dp)
-                .width(104.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .background(Surface.copy(alpha = 0.65f))
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .padding(18.dp)
+                .width(124.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(OnSurface.copy(alpha = 0.06f))
+                .border(1.dp, OnSurface.copy(alpha = 0.12f), RoundedCornerShape(24.dp))
+                .padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
             Text(
                 text = (draft.deep * 100).roundToInt().toString(),
                 fontFamily = FrauncesDisplay,
-                fontSize = 48.sp,
+                fontSize = 50.sp,
                 lineHeight = 52.sp,
                 color = OnSurface,
             )
             Text(
                 text = "Deepness",
                 fontFamily = DmSans,
-                fontSize = 12.sp,
-                color = OnSurface,
+                fontSize = 11.5.sp,
+                color = OnSurfaceVariant,
+            )
+            Text(
+                text = "${((Sound.cutoffHz(draft.deep) / 5).roundToInt() * 5)} Hz",
+                style = Numeric,
+                fontSize = 10.sp,
+                color = LabelMuted,
+            )
+        }
+
+        if (!touched) {
+            Text(
+                text = "Drag to deepen",
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 20.dp, bottom = 96.dp),
+                fontFamily = DmSans,
+                fontSize = 10.5.sp,
+                color = OnSurfaceVariant,
             )
         }
     }

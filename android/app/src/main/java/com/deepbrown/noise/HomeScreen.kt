@@ -1,6 +1,13 @@
 package com.deepbrown.noise
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,14 +18,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 
 @Composable
 fun HomeScreen(
@@ -28,6 +38,7 @@ fun HomeScreen(
     soundId: String?,
     soundName: String,
     color: NoiseColor,
+    scope: () -> FloatArray?,
     onQuick: (NoiseColor) -> Unit,
     onPlaySound: (SavedSound) -> Unit,
     onSoundMenu: (SavedSound) -> Unit,
@@ -35,72 +46,101 @@ fun HomeScreen(
     onCreate: () -> Unit,
     onSettings: () -> Unit,
 ) {
-    val quickColor =
-        if (loaded && soundId == null) color else null
+    val quickColor = if (loaded && soundId == null) color else null
+    val auraColor = if (loaded) color.dot else NeutralAura
+    val scrollState = rememberScrollState()
+    val scopeCoroutine = rememberCoroutineScope()
 
-    Column(Modifier.fillMaxSize().background(Bg)) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .height(64.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = "Colors of Noise",
-                fontFamily = Fraunces,
-                fontSize = 22.sp,
-                lineHeight = 28.sp,
-                textAlign = TextAlign.Center,
-                color = OnSurface,
-            )
-        }
-        DividerLine()
+    Box(Modifier.fillMaxSize().background(Bg)) {
+        NoiseAura(
+            color = auraColor,
+            playing = playing,
+            modifier = Modifier.fillMaxSize(),
+        )
 
-        Column(
-            Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            SectionTitle("Quick Noise")
-            ColorSelector(selected = quickColor, onSelect = onQuick)
+        Column(Modifier.fillMaxSize()) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 10.dp),
+            ) {
+                Text(
+                    text = "Colors of Noise",
+                    fontFamily = Fraunces,
+                    fontSize = 30.sp,
+                    lineHeight = 36.sp,
+                    letterSpacing = (-0.6).sp,
+                    color = OnSurface,
+                )
+            }
 
-            Spacer(Modifier.height(12.dp))
-            SectionTitle("Sounds created")
+            Column(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 8.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                SectionHeader("Quick noise")
+                ColorSelector(selected = quickColor, onSelect = onQuick)
 
-            if (sounds.isEmpty()) {
-                EmptySounds(onCreate = onCreate)
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    sounds.forEach { sound ->
-                        SoundRow(
-                            sound = sound,
-                            onPlay = { onPlaySound(sound) },
-                            onMenu = { onSoundMenu(sound) },
-                        )
+                Spacer(Modifier.height(12.dp))
+                SectionHeader(
+                    title = "Your sounds",
+                    trailing = if (sounds.isEmpty()) null else sounds.size.toString().padStart(2, '0'),
+                )
+
+                if (sounds.isEmpty()) {
+                    EmptySounds(onCreate = onCreate)
+                } else {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(Surface)
+                            .border(1.dp, Hairline, RoundedCornerShape(24.dp)),
+                    ) {
+                        sounds.forEachIndexed { index, sound ->
+                            SoundRow(
+                                sound = sound,
+                                active = loaded && sound.id == soundId,
+                                playing = playing,
+                                onPlay = { onPlaySound(sound) },
+                                onMenu = { onSoundMenu(sound) },
+                            )
+                            if (index != sounds.lastIndex) {
+                                HairlineDivider(startPadding = 62.dp)
+                            }
+                        }
                     }
                 }
             }
-        }
 
-        if (loaded) {
-            NowPlayingCard(
-                title = if (soundId == null) "Quick Noise" else soundName,
-                subtitle = "${color.label} Noise",
-                color = color.dot,
-                playing = playing,
-                onToggle = onToggleNowPlaying,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            AnimatedVisibility(
+                visible = loaded,
+                enter = fadeIn(tween(220)) + expandVertically(tween(280), expandFrom = Alignment.Bottom),
+                exit = fadeOut(tween(140)) + shrinkVertically(tween(220), shrinkTowards = Alignment.Bottom),
+            ) {
+                NowPlayingCard(
+                    title = if (soundId == null) "Quick noise" else soundName,
+                    subtitle = "${color.label} noise",
+                    color = color.dot,
+                    playing = playing,
+                    scope = scope,
+                    onToggle = onToggleNowPlaying,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                )
+            }
+
+            BottomBar(
+                accent = if (loaded) color.dot else OnSurface,
+                onCollection = { scopeCoroutine.launch { scrollState.animateScrollTo(0) } },
+                onCreate = onCreate,
+                onSettings = onSettings,
             )
         }
-
-        BottomBar(
-            onCollection = {},
-            onCreate = onCreate,
-            onSettings = onSettings,
-        )
     }
 }

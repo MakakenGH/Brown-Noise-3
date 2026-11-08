@@ -1,6 +1,5 @@
 package com.deepbrown.noise
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,11 +35,13 @@ fun ColorsOfNoiseApp(
     onPreviewStop: () -> Unit,
     onDiscardPreview: () -> Unit,
     onPreviewParams: (Draft) -> Unit,
+    scope: () -> FloatArray?,
 ) {
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
     var sheet by remember { mutableStateOf<HomeSheet?>(null) }
     var previewActive by remember { mutableStateOf(false) }
     var previewTouched by remember { mutableStateOf(false) }
+    var deleteTarget by remember { mutableStateOf<SavedSound?>(null) }
 
     LaunchedEffect(ui.playing) {
         if (!ui.playing) previewActive = false
@@ -68,6 +69,7 @@ fun ColorsOfNoiseApp(
                 soundId = ui.soundId,
                 soundName = ui.soundName,
                 color = ui.params.color,
+                scope = scope,
                 onQuick = onQuick,
                 onPlaySound = onPlaySound,
                 onSoundMenu = { sheet = HomeSheet.Sound(it) },
@@ -77,11 +79,11 @@ fun ColorsOfNoiseApp(
             )
         }
         is Screen.Editor -> {
-            BackHandler { leaveEditor() }
             EditorScreen(
                 initial = current.sound?.let { Draft.from(it) } ?: Draft(),
                 editing = current.sound != null,
                 previewing = previewActive,
+                scope = scope,
                 onDraftChanged = { draft ->
                     if (previewActive) onPreviewParams(draft)
                 },
@@ -120,7 +122,7 @@ fun ColorsOfNoiseApp(
                 },
                 onRename = { sheet = HomeSheet.Rename(current.sound) },
                 onDelete = {
-                    onDeleteSound(current.sound)
+                    deleteTarget = current.sound
                     sheet = null
                 },
                 onDismiss = { sheet = null },
@@ -131,7 +133,8 @@ fun ColorsOfNoiseApp(
                 title = "Rename sound",
                 initial = current.sound.name,
                 placeholder = "Placeholder text",
-                confirmLabel = "Save Changes",
+                confirmLabel = "Save changes",
+                accent = current.sound.color.dot,
                 onSave = { name ->
                     onRenameSound(current.sound, name)
                     sheet = null
@@ -149,5 +152,23 @@ fun ColorsOfNoiseApp(
             )
         }
         null -> Unit
+    }
+
+    deleteTarget?.let { target ->
+        val playingThis = target.id == ui.soundId
+        ConfirmDialog(
+            title = "Delete \u201C${target.name}\u201D?",
+            message = if (playingThis) {
+                "Playback will stop and it will be removed from your collection."
+            } else {
+                "It will be removed from your collection."
+            },
+            confirmLabel = "Delete",
+            onConfirm = {
+                onDeleteSound(target)
+                deleteTarget = null
+            },
+            onDismiss = { deleteTarget = null },
+        )
     }
 }

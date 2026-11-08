@@ -86,6 +86,7 @@ class MainActivity : ComponentActivity() {
                     onPreviewStop = ::pausePlayback,
                     onDiscardPreview = ::discardPreview,
                     onPreviewParams = ::updatePreview,
+                    scope = { service?.scope() },
                 )
             }
         }

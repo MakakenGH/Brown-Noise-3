@@ -1,6 +1,7 @@
 package com.deepbrown.noise
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,8 +34,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
@@ -50,8 +52,8 @@ private fun Sheet(
         onDismissRequest = onDismiss,
         sheetState = state,
         containerColor = Bg,
-        scrimColor = Color.Black.copy(alpha = 0.5f),
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        scrimColor = Color.Black.copy(alpha = 0.52f),
+        shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
         dragHandle = { SheetHandle() },
     ) {
         content()
@@ -71,50 +73,61 @@ fun SoundSettingsSheet(
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 20.dp)
                 .navigationBarsPadding()
-                .padding(bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(bottom = 20.dp),
         ) {
-            Text(
-                text = sound.name,
-                modifier = Modifier.fillMaxWidth(),
-                fontFamily = Fraunces,
-                fontSize = 22.sp,
-                lineHeight = 28.sp,
-                textAlign = TextAlign.Center,
-                color = OnSurface,
-            )
-            Text(
-                text = "${sound.color.label} Noise",
-                modifier = Modifier.fillMaxWidth(),
-                fontFamily = DmSans,
-                fontSize = 13.sp,
-                textAlign = TextAlign.Center,
-                color = OnSurfaceVariant,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ColorOrb(sound.color.dot, 44.dp, ring = true)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    SheetTitle(sound.name)
+                    SheetSubtitle("${sound.color.label.lowercase()} noise")
+                }
+            }
+            Spacer(Modifier.height(22.dp))
+
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Surface)
+                    .border(1.dp, Hairline, RoundedCornerShape(24.dp)),
+            ) {
+                ActionRow(
+                    label = "Edit sound",
+                    icon = { MusicNoteIcon(OnSurface, 20.dp) },
+                    onClick = onEdit,
+                )
+                HairlineDivider(startPadding = 50.dp)
+                ActionRow(
+                    label = "Move to top",
+                    icon = { Icon(Icons.Default.List, null, tint = OnSurface, modifier = Modifier.size(20.dp)) },
+                    onClick = onPutFirst,
+                )
+                HairlineDivider(startPadding = 50.dp)
+                ActionRow(
+                    label = "Rename",
+                    icon = { Icon(Icons.Default.Edit, null, tint = OnSurface, modifier = Modifier.size(20.dp)) },
+                    onClick = onRename,
+                )
+            }
+
             Spacer(Modifier.height(12.dp))
-            ActionRow(
-                label = "Edit Sound",
-                icon = { MusicNoteIcon(OnSurface, 20.dp) },
-                onClick = onEdit,
-            )
-            ActionRow(
-                label = "Put this sound first in list",
-                icon = { Icon(Icons.Default.List, null, tint = OnSurface, modifier = Modifier.size(20.dp)) },
-                onClick = onPutFirst,
-            )
-            ActionRow(
-                label = "Rename sound",
-                icon = { Icon(Icons.Default.Edit, null, tint = OnSurface, modifier = Modifier.size(20.dp)) },
-                onClick = onRename,
-            )
-            ActionRow(
-                label = "Delete Sound",
-                icon = { Icon(Icons.Default.Delete, null, tint = OnSurface, modifier = Modifier.size(20.dp)) },
-                onClick = onDelete,
-                container = Danger,
-            )
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(DangerSurface)
+                    .border(1.dp, Danger.copy(alpha = 0.28f), RoundedCornerShape(24.dp)),
+            ) {
+                ActionRow(
+                    label = "Delete sound",
+                    icon = { Icon(Icons.Default.Delete, null, tint = DangerInk, modifier = Modifier.size(20.dp)) },
+                    onClick = onDelete,
+                    content = DangerInk,
+                )
+            }
         }
     }
 }
@@ -125,6 +138,7 @@ fun NameSheet(
     initial: String,
     placeholder: String,
     confirmLabel: String,
+    accent: Color,
     onSave: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -133,21 +147,14 @@ fun NameSheet(
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 20.dp)
                 .navigationBarsPadding()
                 .imePadding()
-                .padding(bottom = 16.dp),
+                .padding(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(
-                text = title,
-                modifier = Modifier.fillMaxWidth(),
-                fontFamily = Fraunces,
-                fontSize = 22.sp,
-                lineHeight = 28.sp,
-                textAlign = TextAlign.Center,
-                color = OnSurface,
-            )
+            SheetTitle(title)
+            SheetSubtitle("A name makes it easy to find in your collection.")
             NameField(
                 value = value,
                 onValueChange = { value = it },
@@ -155,6 +162,7 @@ fun NameSheet(
             )
             PrimaryButton(
                 text = confirmLabel,
+                accent = accent,
                 enabled = value.isNotBlank(),
                 onClick = { onSave(value.trim()) },
             )
@@ -170,89 +178,85 @@ fun PlaybackSettingsSheet(
     onTimer: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val haptics = LocalHapticFeedback.current
     Sheet(onDismiss) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 20.dp)
                 .navigationBarsPadding()
-                .padding(bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+                .padding(bottom = 20.dp),
         ) {
-            Text(
-                text = "Settings",
-                modifier = Modifier.fillMaxWidth(),
-                fontFamily = Fraunces,
-                fontSize = 22.sp,
-                lineHeight = 28.sp,
-                textAlign = TextAlign.Center,
-                color = OnSurface,
-            )
+            SheetTitle("Playback")
+            Spacer(Modifier.height(4.dp))
+            SheetSubtitle("Level and how long it keeps going.")
+            Spacer(Modifier.height(20.dp))
+
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(28.dp))
+                    .clip(RoundedCornerShape(24.dp))
                     .background(Surface)
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                    .border(1.dp, Hairline, RoundedCornerShape(24.dp)),
             ) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Volume",
+                            fontFamily = DmSans,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.5.sp,
+                            color = OnSurface,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            "${(volume * 100).roundToInt()}%",
+                            style = Numeric,
+                            fontSize = 13.sp,
+                            color = OnSurfaceVariant,
+                        )
+                    }
+                    SliderTrack(value = volume, onChange = onVolume, contentDescription = "Volume")
+                }
+                HairlineDivider(startPadding = 18.dp)
+                Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
                     Text(
-                        "Volume",
+                        "Sleep timer",
                         fontFamily = DmSans,
                         fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp,
+                        fontSize = 13.5.sp,
                         color = OnSurface,
                     )
-                    Spacer(Modifier.weight(1f))
-                    Text(
-                        "${(volume * 100).roundToInt()}%",
-                        fontFamily = DmSans,
-                        fontSize = 13.sp,
-                        color = LabelMuted,
-                    )
-                }
-                SliderTrack(value = volume, onChange = onVolume)
-            }
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(28.dp))
-                    .background(Surface)
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    "Sleep Timer",
-                    fontFamily = DmSans,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp,
-                    color = OnSurface,
-                )
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    listOf(0 to "Off", 15 to "15 min", 30 to "30 min", 60 to "1 hour", 120 to "2 hours")
-                        .forEach { (minutes, label) ->
-                            val selected = timerMin == minutes
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(40.dp)
-                                    .clip(RoundedCornerShape(20.dp))
-                                    .background(if (selected) OnSurface else Color.Transparent)
-                                    .clickable { onTimer(minutes) },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = label,
-                                    fontFamily = DmSans,
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 12.sp,
-                                    color = if (selected) Ink else OnSurfaceVariant,
-                                )
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        listOf(0 to "Off", 15 to "15 min", 30 to "30 min", 60 to "1 hour", 120 to "2 hours")
+                            .forEach { (minutes, label) ->
+                                val selected = timerMin == minutes
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(38.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(if (selected) OnSurface else SurfaceHigh)
+                                        .clickable {
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onTimer(minutes)
+                                        },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontFamily = DmSans,
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 11.sp,
+                                        color = if (selected) Ink else OnSurfaceVariant,
+                                    )
+                                }
                             }
-                        }
+                    }
                 }
             }
         }
