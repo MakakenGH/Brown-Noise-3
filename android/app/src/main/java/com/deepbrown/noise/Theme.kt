@@ -7,6 +7,7 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -35,6 +36,13 @@ val BrownNoise = Color(0xFFC68B63)
 val PinkNoise = Color(0xFFC99CDC)
 val GreenNoise = Color(0xFF9FBF96)
 val NeutralAura = Color(0xFF5A4B8A)
+
+/** Saved sounds get a brighter or darker orb depending on their depth. */
+fun soundOrbColor(base: Color, deep: Float): Color {
+    val d = deep.coerceIn(0f, 1f)
+    val lifted = lerp(base, Color.White, 0.28f * (1f - d))
+    return lerp(lifted, Color.Black, 0.34f * d)
+}
 
 val NoiseColor.dot: Color
     get() = when (this) {

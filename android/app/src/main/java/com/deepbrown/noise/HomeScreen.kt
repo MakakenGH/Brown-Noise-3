@@ -38,6 +38,7 @@ fun HomeScreen(
     soundId: String?,
     soundName: String,
     color: NoiseColor,
+    deep: Float,
     scope: () -> FloatArray?,
     onQuick: (NoiseColor) -> Unit,
     onPlaySound: (SavedSound) -> Unit,
@@ -81,14 +82,8 @@ fun HomeScreen(
                 if (sounds.isEmpty()) {
                     EmptySounds(onCreate = onCreate)
                 } else {
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(Surface)
-                            .border(1.dp, Hairline, RoundedCornerShape(24.dp)),
-                    ) {
-                        sounds.forEachIndexed { index, sound ->
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        sounds.forEach { sound ->
                             SoundRow(
                                 sound = sound,
                                 active = loaded && sound.id == soundId,
@@ -96,9 +91,6 @@ fun HomeScreen(
                                 onPlay = { onPlaySound(sound) },
                                 onMenu = { onSoundMenu(sound) },
                             )
-                            if (index != sounds.lastIndex) {
-                                HairlineDivider(startPadding = 62.dp)
-                            }
                         }
                     }
                 }
@@ -112,7 +104,7 @@ fun HomeScreen(
                 NowPlayingCard(
                     title = if (soundId == null) "Quick noise" else soundName,
                     subtitle = "${color.label} noise",
-                    color = color.dot,
+                    color = soundOrbColor(color.dot, deep),
                     playing = playing,
                     scope = scope,
                     onOpen = onOpenNowPlaying,

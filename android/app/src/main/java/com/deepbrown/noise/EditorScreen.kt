@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -55,6 +56,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -226,21 +229,33 @@ fun EditorScreen(
                 .padding(start = 14.dp, end = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ColorOrb(accent, 34.dp, ring = true)
+            ColorOrb(soundOrbColor(draft.color.dot, draft.deep), 34.dp, ring = true)
             Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
+            Column(
+                Modifier
+                    .weight(1f)
+                    .offset(y = (-1.5).dp),
+                verticalArrangement = Arrangement.Center,
+            ) {
                 Text(
                     text = if (previewing) "Previewing" else "Preview",
-                    fontFamily = DmSans,
-                    fontSize = 10.5.sp,
-                    color = LabelMuted,
+                    style = TextStyle(
+                        fontFamily = DmSans,
+                        fontSize = 10.5.sp,
+                        lineHeight = 12.sp,
+                        color = LabelMuted,
+                        platformStyle = PlatformTextStyle(includeFontPadding = false),
+                    ),
                 )
                 Text(
                     text = draft.name.ifBlank { "Untitled sound" },
-                    fontFamily = Fraunces,
-                    fontSize = 17.sp,
-                    lineHeight = 22.sp,
-                    color = OnSurface,
+                    style = TextStyle(
+                        fontFamily = Fraunces,
+                        fontSize = 17.sp,
+                        lineHeight = 20.sp,
+                        color = OnSurface,
+                        platformStyle = PlatformTextStyle(includeFontPadding = false),
+                    ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

@@ -11,6 +11,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.IndicationNodeFactory
 import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -96,6 +97,20 @@ val NoIndication: IndicationNodeFactory = object : IndicationNodeFactory {
     override fun hashCode(): Int = System.identityHashCode(this)
 }
 
+@Composable
+fun Modifier.noRippleClickable(
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+): Modifier {
+    val interaction = remember { MutableInteractionSource() }
+    return clickable(
+        interactionSource = interaction,
+        indication = null,
+        enabled = enabled,
+        onClick = onClick,
+    )
+}
+
 /* ---------------------------------------------------------------------- */
 /* Icons drawn locally                                                     */
 /* ---------------------------------------------------------------------- */
@@ -161,7 +176,7 @@ fun MusicNoteIcon(tint: Color, size: Dp) {
 /* Atmosphere                                                              */
 /* ---------------------------------------------------------------------- */
 
-/** A slow colour field that connects the interface to the loaded noise. */
+/** A single colour field rising from the bottom of the screen. */
 @Composable
 fun NoiseAura(color: Color, modifier: Modifier = Modifier) {
     val aura by animateColorAsState(
@@ -169,36 +184,16 @@ fun NoiseAura(color: Color, modifier: Modifier = Modifier) {
         animationSpec = tween(1_600, easing = FastOutSlowInEasing),
         label = "aura colour",
     )
-    val context = LocalContext.current
-    val reduceMotion = remember { !ValueAnimator.areAnimatorsEnabled() }
-    val phase = remember { Animatable(0f) }
-    LaunchedEffect(reduceMotion) {
-        if (!reduceMotion) {
-            while (isActive) {
-                phase.animateTo(1f, tween(16_000, easing = LinearEasing))
-                phase.snapTo(0f)
-            }
-        }
-    }
     Canvas(modifier) {
-        val breathe = if (!reduceMotion) {
-            0.975f + 0.025f * sin(phase.value * 2f * PI.toFloat())
-        } else {
-            1f
-        }
-        val topAlpha = (if (aura.luminance() > 0.7f) 0.15f else 0.22f) * (0.96f + (breathe - 0.975f) * 1.6f)
         drawRect(
             brush = Brush.radialGradient(
-                colors = listOf(aura.copy(alpha = topAlpha), Color.Transparent),
-                center = Offset(size.width * 0.86f, size.height * 0.06f),
-                radius = size.width * 1.05f * breathe,
-            ),
-        )
-        drawRect(
-            brush = Brush.radialGradient(
-                colors = listOf(aura.copy(alpha = 0.095f), Color.Transparent),
-                center = Offset(size.width * 0.08f, size.height * 0.72f),
-                radius = size.width * 0.75f,
+                colors = listOf(
+                    aura.copy(alpha = 0.32f),
+                    aura.copy(alpha = 0.10f),
+                    Color.Transparent,
+                ),
+                center = Offset(size.width * 0.5f, size.height * 1.02f),
+                radius = size.height * 0.90f,
             ),
         )
     }
@@ -649,22 +644,25 @@ fun SoundRow(
     onPlay: () -> Unit,
     onMenu: () -> Unit,
 ) {
-    val bg by animateColorAsState(
-        if (active) sound.color.dot.copy(alpha = 0.07f) else Color.Transparent,
-        tween(550, easing = FastOutSlowInEasing),
-        label = "row background",
-    )
+    val orbColor = soundOrbColor(sound.color.dot, sound.deep)
     val dot by animateFloatAsState(if (playing && active) 1f else 0.45f, tween(400), label = "status")
+    val border by animateColorAsState(
+        if (active) orbColor.copy(alpha = 0.55f) else Hairline,
+        tween(450, easing = FastOutSlowInEasing),
+        label = "row border",
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(68.dp)
-            .background(bg)
-            .clickable(onClick = onPlay)
+            .height(72.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(Surface)
+            .border(1.dp, border, RoundedCornerShape(24.dp))
+            .noRippleClickable(onClick = onPlay)
             .padding(start = 16.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ColorOrb(sound.color.dot, 32.dp, ring = active)
+        ColorOrb(orbColor, 32.dp, ring = active)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(
@@ -682,7 +680,7 @@ fun SoundRow(
                         Modifier
                             .size(5.dp)
                             .clip(CircleShape)
-                            .background(sound.color.dot.copy(alpha = dot)),
+                            .background(orbColor.copy(alpha = dot)),
                     )
                     Spacer(Modifier.width(6.dp))
                 }
@@ -698,7 +696,7 @@ fun SoundRow(
             modifier = Modifier
                 .size(40.dp)
                 .clip(CircleShape)
-                .clickable(onClick = onMenu),
+                .noRippleClickable(onClick = onMenu),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
@@ -742,7 +740,7 @@ fun NowPlayingCard(
                 ),
             )
             .border(1.dp, accent.copy(alpha = 0.26f), RoundedCornerShape(24.dp))
-            .clickable(onClick = onOpen)
+            .noRippleClickable(onClick = onOpen)
             .padding(start = 16.dp, end = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -780,7 +778,7 @@ fun NowPlayingCard(
                 .size(44.dp)
                 .clip(CircleShape)
                 .background(accent)
-                .clickable(onClick = onToggle)
+                .noRippleClickable(onClick = onToggle)
                 .semantics { contentDescription = if (playing) "Pause" else "Play" },
             contentAlignment = Alignment.Center,
         ) {

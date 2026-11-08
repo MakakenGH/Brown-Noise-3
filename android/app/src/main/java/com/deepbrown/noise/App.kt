@@ -88,6 +88,7 @@ fun ColorsOfNoiseApp(
                 soundId = ui.soundId,
                 soundName = ui.soundName,
                 color = ui.params.color,
+                deep = ui.params.deep,
                 scope = scope,
                 onQuick = onQuick,
                 onPlaySound = onPlaySound,
