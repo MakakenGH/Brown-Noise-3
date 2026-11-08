@@ -80,7 +80,8 @@ fun ColorsOfNoiseApp(
         }
         is Screen.Editor -> {
             EditorScreen(
-                initial = current.sound?.let { Draft.from(it) } ?: Draft(),
+                initial = current.sound?.let { Draft.from(it) }
+                    ?: Draft(color = if (ui.loaded) ui.params.color else NoiseColor.WHITE),
                 editing = current.sound != null,
                 previewing = previewActive,
                 scope = scope,

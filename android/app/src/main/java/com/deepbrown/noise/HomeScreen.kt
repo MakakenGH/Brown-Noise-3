@@ -61,27 +61,12 @@ fun HomeScreen(
         Column(Modifier.fillMaxSize()) {
             Column(
                 Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 10.dp),
-            ) {
-                Text(
-                    text = "Colors of Noise",
-                    fontFamily = Fraunces,
-                    fontSize = 30.sp,
-                    lineHeight = 36.sp,
-                    letterSpacing = (-0.6).sp,
-                    color = OnSurface,
-                )
-            }
-
-            Column(
-                Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .statusBarsPadding()
                     .verticalScroll(scrollState)
                     .padding(horizontal = 20.dp)
-                    .padding(top = 8.dp, bottom = 16.dp),
+                    .padding(top = 10.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 SectionHeader("Quick noise")

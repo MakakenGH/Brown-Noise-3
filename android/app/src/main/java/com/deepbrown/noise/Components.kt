@@ -5,7 +5,6 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -19,6 +18,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -171,17 +171,17 @@ fun NoiseAura(color: Color, playing: Boolean, modifier: Modifier = Modifier) {
         } else {
             1f
         }
-        val topAlpha = if (aura.luminance() > 0.7f) 0.095f else 0.13f
+        val topAlpha = if (aura.luminance() > 0.7f) 0.15f else 0.22f
         drawRect(
             brush = Brush.radialGradient(
                 colors = listOf(aura.copy(alpha = topAlpha), Color.Transparent),
                 center = Offset(size.width * 0.86f, size.height * 0.06f),
-                radius = size.width * 0.95f * breathe,
+                radius = size.width * 1.05f * breathe,
             ),
         )
         drawRect(
             brush = Brush.radialGradient(
-                colors = listOf(aura.copy(alpha = 0.055f), Color.Transparent),
+                colors = listOf(aura.copy(alpha = 0.10f), Color.Transparent),
                 center = Offset(size.width * 0.08f, size.height * 0.72f),
                 radius = size.width * 0.75f,
             ),
@@ -433,15 +433,15 @@ fun ColorSelector(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .height(112.dp)
             .clip(RoundedCornerShape(28.dp))
             .background(Surface)
             .border(1.dp, Hairline, RoundedCornerShape(28.dp))
-            .padding(horizontal = 6.dp, vertical = 10.dp),
+            .padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         NoiseColor.entries.forEach { color ->
             val active = selected == color
-            val orbSize by animateDpAsState(if (active) 38.dp else 32.dp, tween(260), label = "orb size")
             val labelColor by animateColorAsState(
                 if (active) OnSurface else OnSurfaceVariant,
                 tween(200),
@@ -450,6 +450,7 @@ fun ColorSelector(
             Column(
                 modifier = Modifier
                     .weight(1f)
+                    .fillMaxHeight()
                     .clip(RoundedCornerShape(20.dp))
                     .clickable {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -458,24 +459,24 @@ fun ColorSelector(
                     .semantics {
                         contentDescription = "${color.label} noise"
                         this.selected = active
-                    }
-                    .padding(vertical = 8.dp),
+                    },
                 horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
             ) {
-                Box(contentAlignment = Alignment.Center) {
+                Box(Modifier.size(52.dp), contentAlignment = Alignment.Center) {
                     if (active) {
                         Box(
                             Modifier
-                                .size(52.dp)
+                                .fillMaxSize()
                                 .background(
                                     Brush.radialGradient(
-                                        listOf(color.dot.copy(alpha = 0.26f), Color.Transparent),
+                                        listOf(color.dot.copy(alpha = 0.28f), Color.Transparent),
                                     ),
                                     CircleShape,
                                 ),
                         )
                     }
-                    ColorOrb(color.dot, orbSize, ring = active)
+                    ColorOrb(color.dot, if (active) 38.dp else 32.dp, ring = active)
                 }
                 Spacer(Modifier.height(9.dp))
                 Text(
@@ -540,20 +541,21 @@ fun SliderTrack(
             val thumbX = value * w
             val lineH = 3.dp.toPx()
 
+            // Fixed dot grid; the filled part simply covers the dots it passes.
+            val dot = 1.3.dp.toPx()
+            val step = 14.dp.toPx()
+            var x = 5.dp.toPx()
+            while (x < w) {
+                drawCircle(Track, radius = dot, center = Offset(x, cy))
+                x += step
+            }
+
             drawRoundRect(
                 color = accent,
                 topLeft = Offset(0f, cy - lineH / 2f),
                 size = Size((thumbX - lineH / 2f).coerceAtLeast(0f), lineH),
                 cornerRadius = CornerRadius(lineH / 2f),
             )
-
-            val dot = 1.3.dp.toPx()
-            val step = 14.dp.toPx()
-            var x = thumbX + 13.dp.toPx()
-            while (x < w) {
-                drawCircle(Track, radius = dot, center = Offset(x, cy))
-                x += step
-            }
 
             drawRoundRect(
                 color = OnSurface,
