@@ -34,6 +34,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -425,8 +426,6 @@ fun EmptySounds(onCreate: () -> Unit) {
 @Composable
 fun SoundRow(
     sound: SavedSound,
-    active: Boolean,
-    playing: Boolean,
     onPlay: () -> Unit,
     onMenu: () -> Unit,
 ) {
@@ -436,7 +435,7 @@ fun SoundRow(
             .height(72.dp)
             .clip(RoundedCornerShape(28.dp))
             .background(Surface)
-            .clickable(onClick = if (active) onMenu else onPlay)
+            .clickable(onClick = onPlay)
             .padding(start = 16.dp, end = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -466,33 +465,85 @@ fun SoundRow(
                 color = OnSurfaceVariant,
             )
         }
-        if (active) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Track)
-                    .clickable(onClick = onPlay)
-                    .semantics { contentDescription = if (playing) "Pause" else "Play" },
-                contentAlignment = Alignment.Center,
-            ) {
-                PlayPauseIcon(playing, OnSurface, 18.dp)
-            }
-        } else {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .clickable(onClick = onMenu),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Default.MoreVert,
-                    contentDescription = "${sound.name} options",
-                    tint = OnSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .clickable(onClick = onMenu),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Default.MoreVert,
+                contentDescription = "${sound.name} options",
+                tint = OnSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+@Composable
+fun NowPlayingCard(
+    title: String,
+    subtitle: String,
+    color: Color,
+    playing: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(72.dp)
+            .shadow(
+                elevation = 16.dp,
+                shape = RoundedCornerShape(28.dp),
+                clip = false,
+                ambientColor = Color.Black,
+                spotColor = Color.Black,
+            )
+            .clip(RoundedCornerShape(28.dp))
+            .background(Surface)
+            .clickable(onClick = onToggle)
+            .padding(start = 16.dp, end = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(
+                    Brush.linearGradient(
+                        listOf(lerp(color, Color.White, 0.45f), color),
+                    ),
+                ),
+        )
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontFamily = DmSans,
+                fontWeight = FontWeight.Medium,
+                fontSize = 16.sp,
+                color = OnSurface,
+            )
+            Text(
+                text = subtitle,
+                fontFamily = DmSans,
+                fontSize = 13.sp,
+                color = OnSurfaceVariant,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Track)
+                .clickable(onClick = onToggle)
+                .semantics { contentDescription = if (playing) "Pause" else "Play" },
+            contentAlignment = Alignment.Center,
+        ) {
+            PlayPauseIcon(playing, OnSurface, 18.dp)
         }
     }
 }

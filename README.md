@@ -9,8 +9,10 @@ be shaped while they play.
 * Quick Noise: tap White, Brown, Pink or Green to start a generic noise of that
   colour. It plays immediately and is not added to your collection.
 * Your Collection: save your own sounds with a name, colour, deepness, rumble,
-  width and swell. Sounds can be edited, renamed, deleted and moved to the top
-  of the list.
+  width and swell. Tap a saved sound to play or stop it; its three-dot menu opens
+  edit, rename, reorder and delete.
+* A now-playing card above the bottom bar always shows the loaded sound and lets
+  you play or pause it.
 * The Noise Generator editor previews changes live while it plays.
 * Volume and a sleep timer (15 min, 30 min, 1 h, 2 h) live in Settings.
 * Playback runs in a foreground media service, so it keeps going when the app is

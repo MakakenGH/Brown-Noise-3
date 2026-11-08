@@ -33,6 +33,7 @@ data class UiState(
     val params: Params = Params(),
     val soundId: String? = null,
     val soundName: String = "Brown noise",
+    val loaded: Boolean = false,
     val timerEndWall: Long = 0L,
     val timerMin: Int = 0,
     val error: String? = null,
@@ -62,6 +63,7 @@ class NoiseService : Service() {
     private var params = Params()
     private var soundId: String? = null
     private var soundName: String = "Brown noise"
+    private var loaded = false
     private var playing = false
     private var resumeOnFocusGain = false
     private var foregroundStarted = false
@@ -175,6 +177,7 @@ class NoiseService : Service() {
         params = newParams
         soundName = name
         soundId = id
+        loaded = true
         persist()
         updateSession()
         if (!wasPlaying) {
@@ -238,6 +241,8 @@ class NoiseService : Service() {
         engine.setMasterTarget(1.0)
         if (!engine.isRunning) engine.start()
         playing = true
+        loaded = true
+        persist()
 
         if (!wakeLock.isHeld) wakeLock.acquire()
         applyTimerOnPlay()
@@ -277,8 +282,11 @@ class NoiseService : Service() {
 
     private fun stopPlayback() {
         playing = false
+        loaded = false
+        soundId = null
         resumeOnFocusGain = false
         clearTimer()
+        persist()
         engine.setSleepEnd(0L)
         engine.setMasterTarget(0.0)
         publish()
@@ -336,6 +344,7 @@ class NoiseService : Service() {
     fun setIdentity(id: String?, name: String) {
         soundId = id
         soundName = name
+        loaded = true
         persist()
         updateSession()
         if (playing) updateNotification()
@@ -389,6 +398,7 @@ class NoiseService : Service() {
             params = params,
             soundId = soundId,
             soundName = soundName,
+            loaded = loaded,
             timerEndWall = timerEndWall,
             timerMin = timerMin,
             error = errorText,
@@ -427,6 +437,7 @@ class NoiseService : Service() {
         soundId = prefs.getString(KEY_SOUND_ID, null)
         soundName = prefs.getString(KEY_SOUND_NAME, null)
             ?: "${params.color.label} noise"
+        loaded = prefs.getBoolean(KEY_LOADED, false)
     }
 
     private fun persist() {
@@ -439,6 +450,7 @@ class NoiseService : Service() {
             .putString(KEY_COLOR, params.color.name)
             .putString(KEY_SOUND_NAME, soundName)
             .putString(KEY_SOUND_ID, soundId)
+            .putBoolean(KEY_LOADED, loaded)
             .apply()
     }
 
@@ -647,5 +659,6 @@ class NoiseService : Service() {
         private const val KEY_COLOR = "color"
         private const val KEY_SOUND_NAME = "sound_name"
         private const val KEY_SOUND_ID = "sound_id"
+        private const val KEY_LOADED = "sound_loaded"
     }
 }

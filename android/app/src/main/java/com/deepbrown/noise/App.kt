@@ -25,6 +25,7 @@ fun ColorsOfNoiseApp(
     sounds: List<SavedSound>,
     onQuick: (NoiseColor) -> Unit,
     onPlaySound: (SavedSound) -> Unit,
+    onToggleNowPlaying: () -> Unit,
     onSaveDraft: (Draft, String?, Boolean) -> Unit,
     onDeleteSound: (SavedSound) -> Unit,
     onPutFirst: (SavedSound) -> Unit,
@@ -33,19 +34,28 @@ fun ColorsOfNoiseApp(
     onTimer: (Int) -> Unit,
     onPreviewStart: (Draft) -> Unit,
     onPreviewStop: () -> Unit,
+    onDiscardPreview: () -> Unit,
     onPreviewParams: (Draft) -> Unit,
 ) {
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
     var sheet by remember { mutableStateOf<HomeSheet?>(null) }
     var previewActive by remember { mutableStateOf(false) }
+    var previewTouched by remember { mutableStateOf(false) }
 
     LaunchedEffect(ui.playing) {
         if (!ui.playing) previewActive = false
     }
 
-    fun leaveEditor() {
-        if (previewActive) onPreviewStop()
+    fun openEditor(sound: SavedSound?) {
         previewActive = false
+        previewTouched = false
+        screen = Screen.Editor(sound)
+    }
+
+    fun leaveEditor() {
+        if (previewTouched) onDiscardPreview()
+        previewActive = false
+        previewTouched = false
         screen = Screen.Home
     }
 
@@ -54,12 +64,15 @@ fun ColorsOfNoiseApp(
             HomeScreen(
                 sounds = sounds,
                 playing = ui.playing,
-                activeId = ui.soundId,
-                quickColor = if (ui.playing && ui.soundId == null) ui.params.color else null,
+                loaded = ui.loaded,
+                soundId = ui.soundId,
+                soundName = ui.soundName,
+                color = ui.params.color,
                 onQuick = onQuick,
                 onPlaySound = onPlaySound,
                 onSoundMenu = { sheet = HomeSheet.Sound(it) },
-                onCreate = { screen = Screen.Editor(null) },
+                onToggleNowPlaying = onToggleNowPlaying,
+                onCreate = { openEditor(null) },
                 onSettings = { sheet = HomeSheet.Playback },
             )
         }
@@ -74,8 +87,9 @@ fun ColorsOfNoiseApp(
                 },
                 onBack = { leaveEditor() },
                 onSave = { draft ->
-                    onSaveDraft(draft, current.sound?.id, previewActive)
+                    onSaveDraft(draft, current.sound?.id, previewTouched)
                     previewActive = false
+                    previewTouched = false
                     screen = Screen.Home
                 },
                 onTogglePreview = { draft ->
@@ -85,6 +99,7 @@ fun ColorsOfNoiseApp(
                     } else {
                         onPreviewStart(draft)
                         previewActive = true
+                        previewTouched = true
                     }
                 },
             )
@@ -97,7 +112,7 @@ fun ColorsOfNoiseApp(
                 sound = current.sound,
                 onEdit = {
                     sheet = null
-                    screen = Screen.Editor(current.sound)
+                    openEditor(current.sound)
                 },
                 onPutFirst = {
                     onPutFirst(current.sound)

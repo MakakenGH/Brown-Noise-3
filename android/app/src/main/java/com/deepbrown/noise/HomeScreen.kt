@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,14 +24,20 @@ import androidx.compose.ui.unit.sp
 fun HomeScreen(
     sounds: List<SavedSound>,
     playing: Boolean,
-    activeId: String?,
-    quickColor: NoiseColor?,
+    loaded: Boolean,
+    soundId: String?,
+    soundName: String,
+    color: NoiseColor,
     onQuick: (NoiseColor) -> Unit,
     onPlaySound: (SavedSound) -> Unit,
     onSoundMenu: (SavedSound) -> Unit,
+    onToggleNowPlaying: () -> Unit,
     onCreate: () -> Unit,
     onSettings: () -> Unit,
 ) {
+    val quickColor =
+        if (loaded && soundId == null) color else null
+
     Column(Modifier.fillMaxSize().background(Bg)) {
         Box(
             Modifier
@@ -73,14 +78,23 @@ fun HomeScreen(
                     sounds.forEach { sound ->
                         SoundRow(
                             sound = sound,
-                            active = sound.id == activeId,
-                            playing = playing && sound.id == activeId,
                             onPlay = { onPlaySound(sound) },
                             onMenu = { onSoundMenu(sound) },
                         )
                     }
                 }
             }
+        }
+
+        if (loaded) {
+            NowPlayingCard(
+                title = if (soundId == null) "Quick Noise" else soundName,
+                subtitle = "${color.label} Noise",
+                color = color.dot,
+                playing = playing,
+                onToggle = onToggleNowPlaying,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
         }
 
         BottomBar(

@@ -75,6 +75,7 @@ class MainActivity : ComponentActivity() {
                     sounds = sounds.toList(),
                     onQuick = ::toggleQuick,
                     onPlaySound = ::toggleSound,
+                    onToggleNowPlaying = ::toggleNowPlaying,
                     onSaveDraft = ::saveDraft,
                     onDeleteSound = ::deleteSound,
                     onPutFirst = ::putFirst,
@@ -83,6 +84,7 @@ class MainActivity : ComponentActivity() {
                     onTimer = ::setTimer,
                     onPreviewStart = ::startPreview,
                     onPreviewStop = ::pausePlayback,
+                    onDiscardPreview = ::discardPreview,
                     onPreviewParams = ::updatePreview,
                 )
             }
@@ -152,6 +154,26 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun toggleNowPlaying() {
+        val state = ui.value
+        if (!state.loaded) return
+        if (state.playing) {
+            pausePlayback()
+        } else {
+            startPlayback(state.params, state.soundName, state.soundId)
+        }
+    }
+
+    private fun discardPreview() {
+        if (ui.value.soundId != null) return
+        val s = service
+        if (s != null) {
+            s.stop()
+        } else {
+            startService(Intent(this, NoiseService::class.java).setAction(NoiseService.ACTION_STOP))
+        }
+    }
+
     private fun startPreview(draft: Draft) {
         startPlayback(
             draft.params(store.volume),
@@ -173,7 +195,7 @@ class MainActivity : ComponentActivity() {
     /* Collection                                                          */
     /* ------------------------------------------------------------------ */
 
-    private fun saveDraft(draft: Draft, editingId: String?, previewWasPlaying: Boolean) {
+    private fun saveDraft(draft: Draft, editingId: String?, adoptPlayback: Boolean) {
         val id = editingId ?: UUID.randomUUID().toString()
         val sound = SavedSound(
             id = id,
@@ -189,7 +211,7 @@ class MainActivity : ComponentActivity() {
         store.saveSounds(sounds.toList())
 
         val state = ui.value
-        if (previewWasPlaying) {
+        if (adoptPlayback) {
             service?.updateParams(sound.params(store.volume), sound.name, sound.id)
         } else if (state.soundId == sound.id) {
             service?.updateParams(sound.params(store.volume), sound.name, sound.id)
