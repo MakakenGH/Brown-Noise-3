@@ -42,6 +42,7 @@ fun HomeScreen(
     onQuick: (NoiseColor) -> Unit,
     onPlaySound: (SavedSound) -> Unit,
     onSoundMenu: (SavedSound) -> Unit,
+    onOpenNowPlaying: () -> Unit,
     onToggleNowPlaying: () -> Unit,
     onCreate: () -> Unit,
     onSettings: () -> Unit,
@@ -54,7 +55,6 @@ fun HomeScreen(
     Box(Modifier.fillMaxSize().background(Bg)) {
         NoiseAura(
             color = auraColor,
-            playing = playing,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -115,6 +115,7 @@ fun HomeScreen(
                     color = color.dot,
                     playing = playing,
                     scope = scope,
+                    onOpen = onOpenNowPlaying,
                     onToggle = onToggleNowPlaying,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                 )

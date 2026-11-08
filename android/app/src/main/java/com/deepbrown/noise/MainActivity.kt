@@ -15,7 +15,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -62,32 +64,34 @@ class MainActivity : ComponentActivity() {
             isAppearanceLightNavigationBars = false
         }
         setContent {
-            ColorsOfNoiseTheme {
-                RequestNotificationPermission()
-                val error = ui.value.error
-                LaunchedEffect(error) {
-                    if (error != null) {
-                        Toast.makeText(this@MainActivity, error, Toast.LENGTH_LONG).show()
+            CompositionLocalProvider(LocalIndication provides NoIndication) {
+                ColorsOfNoiseTheme {
+                    RequestNotificationPermission()
+                    val error = ui.value.error
+                    LaunchedEffect(error) {
+                        if (error != null) {
+                            Toast.makeText(this@MainActivity, error, Toast.LENGTH_LONG).show()
+                        }
                     }
+                    ColorsOfNoiseApp(
+                        ui = ui.value,
+                        sounds = sounds.toList(),
+                        onQuick = ::toggleQuick,
+                        onPlaySound = ::toggleSound,
+                        onToggleNowPlaying = ::toggleNowPlaying,
+                        onSaveDraft = ::saveDraft,
+                        onDeleteSound = ::deleteSound,
+                        onPutFirst = ::putFirst,
+                        onRenameSound = ::renameSound,
+                        onVolume = ::setVolume,
+                        onTimer = ::setTimer,
+                        onPreviewStart = ::startPreview,
+                        onPreviewStop = ::pausePlayback,
+                        onDiscardPreview = ::discardPreview,
+                        onPreviewParams = ::updatePreview,
+                        scope = { service?.scope() },
+                    )
                 }
-                ColorsOfNoiseApp(
-                    ui = ui.value,
-                    sounds = sounds.toList(),
-                    onQuick = ::toggleQuick,
-                    onPlaySound = ::toggleSound,
-                    onToggleNowPlaying = ::toggleNowPlaying,
-                    onSaveDraft = ::saveDraft,
-                    onDeleteSound = ::deleteSound,
-                    onPutFirst = ::putFirst,
-                    onRenameSound = ::renameSound,
-                    onVolume = ::setVolume,
-                    onTimer = ::setTimer,
-                    onPreviewStart = ::startPreview,
-                    onPreviewStop = ::pausePlayback,
-                    onDiscardPreview = ::discardPreview,
-                    onPreviewParams = ::updatePreview,
-                    scope = { service?.scope() },
-                )
             }
         }
     }

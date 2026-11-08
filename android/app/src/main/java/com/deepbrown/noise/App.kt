@@ -9,7 +9,7 @@ import androidx.compose.runtime.setValue
 
 private sealed interface Screen {
     data object Home : Screen
-    data class Editor(val sound: SavedSound?) : Screen
+    data class Editor(val sound: SavedSound?, val seed: Draft? = null) : Screen
 }
 
 private sealed interface HomeSheet {
@@ -47,10 +47,29 @@ fun ColorsOfNoiseApp(
         if (!ui.playing) previewActive = false
     }
 
-    fun openEditor(sound: SavedSound?) {
+    fun openEditor(sound: SavedSound?, seed: Draft? = null) {
         previewActive = false
         previewTouched = false
-        screen = Screen.Editor(sound)
+        screen = Screen.Editor(sound, seed)
+    }
+
+    fun openNowPlaying() {
+        if (ui.soundId != null) {
+            sounds.firstOrNull { it.id == ui.soundId }?.let { openEditor(it) }
+            return
+        }
+        if (!ui.loaded) return
+        openEditor(
+            sound = null,
+            seed = Draft(
+                name = "",
+                color = ui.params.color,
+                deep = ui.params.deep,
+                rumble = ui.params.rumble,
+                width = ui.params.width,
+                swell = ui.params.swell,
+            ),
+        )
     }
 
     fun leaveEditor() {
@@ -73,6 +92,7 @@ fun ColorsOfNoiseApp(
                 onQuick = onQuick,
                 onPlaySound = onPlaySound,
                 onSoundMenu = { sheet = HomeSheet.Sound(it) },
+                onOpenNowPlaying = { openNowPlaying() },
                 onToggleNowPlaying = onToggleNowPlaying,
                 onCreate = { openEditor(null) },
                 onSettings = { sheet = HomeSheet.Playback },
@@ -81,6 +101,7 @@ fun ColorsOfNoiseApp(
         is Screen.Editor -> {
             EditorScreen(
                 initial = current.sound?.let { Draft.from(it) }
+                    ?: current.seed
                     ?: Draft(color = if (ui.loaded) ui.params.color else NoiseColor.WHITE),
                 editing = current.sound != null,
                 previewing = previewActive,

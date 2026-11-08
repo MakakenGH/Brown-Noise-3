@@ -3,11 +3,14 @@ package com.deepbrown.noise
 import android.animation.ValueAnimator
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.IndicationNodeFactory
+import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -62,6 +65,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.node.DelegatableNode
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -84,6 +88,13 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.sin
+
+/** Removes the ripple flash from clickables; state changes and haptics give feedback. */
+val NoIndication: IndicationNodeFactory = object : IndicationNodeFactory {
+    override fun create(interactionSource: InteractionSource): DelegatableNode = object : Modifier.Node() {}
+    override fun equals(other: Any?): Boolean = other === this
+    override fun hashCode(): Int = System.identityHashCode(this)
+}
 
 /* ---------------------------------------------------------------------- */
 /* Icons drawn locally                                                     */
@@ -152,26 +163,30 @@ fun MusicNoteIcon(tint: Color, size: Dp) {
 
 /** A slow colour field that connects the interface to the loaded noise. */
 @Composable
-fun NoiseAura(color: Color, playing: Boolean, modifier: Modifier = Modifier) {
-    val aura by animateColorAsState(color, tween(650), label = "aura colour")
+fun NoiseAura(color: Color, modifier: Modifier = Modifier) {
+    val aura by animateColorAsState(
+        targetValue = color,
+        animationSpec = tween(1_600, easing = FastOutSlowInEasing),
+        label = "aura colour",
+    )
     val context = LocalContext.current
     val reduceMotion = remember { !ValueAnimator.areAnimatorsEnabled() }
     val phase = remember { Animatable(0f) }
-    LaunchedEffect(playing, reduceMotion) {
-        if (playing && !reduceMotion) {
+    LaunchedEffect(reduceMotion) {
+        if (!reduceMotion) {
             while (isActive) {
-                phase.animateTo(1f, tween(11_000, easing = LinearEasing))
+                phase.animateTo(1f, tween(16_000, easing = LinearEasing))
                 phase.snapTo(0f)
             }
         }
     }
     Canvas(modifier) {
-        val breathe = if (playing && !reduceMotion) {
-            0.94f + 0.06f * sin(phase.value * 2f * PI.toFloat())
+        val breathe = if (!reduceMotion) {
+            0.975f + 0.025f * sin(phase.value * 2f * PI.toFloat())
         } else {
             1f
         }
-        val topAlpha = if (aura.luminance() > 0.7f) 0.15f else 0.22f
+        val topAlpha = (if (aura.luminance() > 0.7f) 0.15f else 0.22f) * (0.96f + (breathe - 0.975f) * 1.6f)
         drawRect(
             brush = Brush.radialGradient(
                 colors = listOf(aura.copy(alpha = topAlpha), Color.Transparent),
@@ -181,7 +196,7 @@ fun NoiseAura(color: Color, playing: Boolean, modifier: Modifier = Modifier) {
         )
         drawRect(
             brush = Brush.radialGradient(
-                colors = listOf(aura.copy(alpha = 0.10f), Color.Transparent),
+                colors = listOf(aura.copy(alpha = 0.095f), Color.Transparent),
                 center = Offset(size.width * 0.08f, size.height * 0.72f),
                 radius = size.width * 0.75f,
             ),
@@ -444,7 +459,7 @@ fun ColorSelector(
             val active = selected == color
             val labelColor by animateColorAsState(
                 if (active) OnSurface else OnSurfaceVariant,
-                tween(200),
+                tween(350, easing = FastOutSlowInEasing),
                 label = "orb label",
             )
             Column(
@@ -636,7 +651,7 @@ fun SoundRow(
 ) {
     val bg by animateColorAsState(
         if (active) sound.color.dot.copy(alpha = 0.07f) else Color.Transparent,
-        tween(300),
+        tween(550, easing = FastOutSlowInEasing),
         label = "row background",
     )
     val dot by animateFloatAsState(if (playing && active) 1f else 0.45f, tween(400), label = "status")
@@ -703,10 +718,11 @@ fun NowPlayingCard(
     color: Color,
     playing: Boolean,
     scope: () -> FloatArray?,
+    onOpen: () -> Unit,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val accent by animateColorAsState(color, tween(500), label = "now playing colour")
+    val accent by animateColorAsState(color, tween(900, easing = FastOutSlowInEasing), label = "now playing colour")
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -726,7 +742,7 @@ fun NowPlayingCard(
                 ),
             )
             .border(1.dp, accent.copy(alpha = 0.26f), RoundedCornerShape(24.dp))
-            .clickable(onClick = onToggle)
+            .clickable(onClick = onOpen)
             .padding(start = 16.dp, end = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -824,7 +840,7 @@ fun BottomBar(
     onCreate: () -> Unit,
     onSettings: () -> Unit,
 ) {
-    val activeDot by animateColorAsState(accent, tween(400), label = "nav accent")
+    val activeDot by animateColorAsState(accent, tween(900, easing = FastOutSlowInEasing), label = "nav accent")
     Box(
         Modifier
             .fillMaxWidth()

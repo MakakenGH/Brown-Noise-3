@@ -77,7 +77,7 @@ fun EditorScreen(
     var showDiscard by remember { mutableStateOf(false) }
     val accent by androidx.compose.animation.animateColorAsState(
         targetValue = draft.color.dot,
-        animationSpec = tween(450),
+        animationSpec = tween(900, easing = androidx.compose.animation.core.FastOutSlowInEasing),
         label = "editor accent",
     )
 
@@ -95,7 +95,6 @@ fun EditorScreen(
     Box(Modifier.fillMaxSize().background(Bg)) {
         NoiseAura(
             color = draft.color.dot,
-            playing = previewing,
             modifier = Modifier.fillMaxSize(),
         )
 
