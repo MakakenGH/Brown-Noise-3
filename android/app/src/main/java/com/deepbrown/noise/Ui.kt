@@ -279,36 +279,29 @@ private fun DepthField(
     val currentDeep by rememberUpdatedState(deep)
     val currentOnDeep by rememberUpdatedState(onDeep)
 
-    val points = remember { mutableStateOf(FloatArray(SCOPE_POINTS)) }
+    val points = remember { mutableStateOf(idleWave()) }
     val peak = remember { mutableFloatStateOf(0.05f) }
 
+    // Animate only while sound is playing. A paused screen keeps its last shape,
+    // so the app does not redraw continuously (battery, and no needless frames
+    // when viewed over a remote desktop).
     LaunchedEffect(state.playing) {
+        if (!state.playing) return@LaunchedEffect
         var last = 0L
         while (isActive) {
             withFrameNanos { now ->
                 if (now - last < 33_000_000L) return@withFrameNanos
                 last = now
 
+                val live = scope() ?: return@withFrameNanos
                 val previous = points.value
+                if (live.size < previous.size) return@withFrameNanos
+                var mx = 0f
+                for (v in live) mx = max(mx, abs(v))
+                peak.floatValue = max(peak.floatValue * 0.995f, max(mx, 0.02f))
                 val next = FloatArray(previous.size)
-                val live = if (state.playing) scope() else null
-                if (live != null && live.size >= previous.size) {
-                    var mx = 0f
-                    for (v in live) mx = max(mx, abs(v))
-                    peak.floatValue = max(peak.floatValue * 0.995f, max(mx, 0.02f))
-                    for (i in previous.indices) {
-                        next[i] = previous[i] + 0.55f * (live[i] / peak.floatValue - previous[i])
-                    }
-                } else {
-                    val t = now / 1_000_000_000.0
-                    for (i in previous.indices) {
-                        val x = i.toFloat() / previous.size
-                        val target = (
-                            0.18 * sin(x * 6.28318 * 1.3 + t * 0.4) +
-                                0.08 * sin(x * 6.28318 * 3.1 - t * 0.25)
-                            ).toFloat()
-                        next[i] = previous[i] + 0.1f * (target - previous[i])
-                    }
+                for (i in previous.indices) {
+                    next[i] = previous[i] + 0.55f * (live[i] / peak.floatValue - previous[i])
                 }
                 points.value = next
             }
@@ -647,6 +640,12 @@ private const val Y_START = 0.32f
 private const val Y_SPAN = 0.52f
 
 private fun yOf(depth: Float): Float = Y_START + Y_SPAN * depth
+
+/** The resting waveform shown while nothing is playing. */
+private fun idleWave(): FloatArray = FloatArray(SCOPE_POINTS) { i ->
+    val x = i.toFloat() / SCOPE_POINTS
+    (0.18 * sin(x * 6.28318 * 1.3) + 0.08 * sin(x * 6.28318 * 3.1)).toFloat()
+}
 
 private fun mixColor(from: IntArray, to: IntArray, t: Float): Color {
     val u = t.coerceIn(0f, 1f)
