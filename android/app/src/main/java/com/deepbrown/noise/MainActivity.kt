@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -16,23 +17,28 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import java.util.UUID
 
 class MainActivity : ComponentActivity() {
 
     private var service: NoiseService? = null
     private val ui = mutableStateOf(UiState())
+    private val sounds = mutableStateListOf<SavedSound>()
     private var bound = false
+    private lateinit var store: SoundStore
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             val s = (binder as? NoiseService.LocalBinder)?.service ?: return
             service = s
             s.listener = { ui.value = it }
-            ui.value = s.snapshot()
+            val snapshot = s.snapshot()
+            ui.value = snapshot
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -48,31 +54,36 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        store = SoundStore(this)
+        sounds.addAll(store.loadSounds())
         enableEdgeToEdge()
         WindowCompat.getInsetsController(window, window.decorView).apply {
             isAppearanceLightStatusBars = false
             isAppearanceLightNavigationBars = false
         }
         setContent {
-            DeepBrownTheme {
+            ColorsOfNoiseTheme {
                 RequestNotificationPermission()
-                val state = ui.value
-                DeepBrownScreen(
-                    state = state,
-                    onToggle = { if (state.playing) pausePlayback() else startPlayback() },
-                    onDeep = { value -> update(state.params.copy(deep = value)) },
-                    onPreset = { preset -> update(preset.applyTo(state.params)) },
-                    onPrevPreset = { stepPreset(-1) },
-                    onNextPreset = { stepPreset(1) },
-                    onParam = { key, value -> update(state.params.with(key, value)) },
-                    onTimer = { minutes ->
-                        ui.value = ui.value.copy(
-                            timerMin = minutes,
-                            timerEndWall = if (minutes > 0) System.currentTimeMillis() + minutes * 60_000L else 0L,
-                        )
-                        service?.setTimer(minutes)
-                    },
-                    scope = { service?.scope() },
+                val error = ui.value.error
+                LaunchedEffect(error) {
+                    if (error != null) {
+                        Toast.makeText(this@MainActivity, error, Toast.LENGTH_LONG).show()
+                    }
+                }
+                ColorsOfNoiseApp(
+                    ui = ui.value,
+                    sounds = sounds.toList(),
+                    onQuick = ::toggleQuick,
+                    onPlaySound = ::toggleSound,
+                    onSaveDraft = ::saveDraft,
+                    onDeleteSound = ::deleteSound,
+                    onPutFirst = ::putFirst,
+                    onRenameSound = ::renameSound,
+                    onVolume = ::setVolume,
+                    onTimer = ::setTimer,
+                    onPreviewStart = ::startPreview,
+                    onPreviewStop = ::pausePlayback,
+                    onPreviewParams = ::updatePreview,
                 )
             }
         }
@@ -96,11 +107,22 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
-    private fun startPlayback() {
-        ContextCompat.startForegroundService(
-            this,
-            Intent(this, NoiseService::class.java).setAction(NoiseService.ACTION_PLAY),
-        )
+    /* ------------------------------------------------------------------ */
+    /* Playback                                                            */
+    /* ------------------------------------------------------------------ */
+
+    private fun startPlayback(params: Params, name: String, id: String?) {
+        val intent = Intent(this, NoiseService::class.java)
+            .setAction(NoiseService.ACTION_PLAY)
+            .putExtra(NoiseService.EXTRA_DEEP, params.deep)
+            .putExtra(NoiseService.EXTRA_RUMBLE, params.rumble)
+            .putExtra(NoiseService.EXTRA_WIDTH, params.width)
+            .putExtra(NoiseService.EXTRA_SWELL, params.swell)
+            .putExtra(NoiseService.EXTRA_VOLUME, params.volume)
+            .putExtra(NoiseService.EXTRA_COLOR, params.color.name)
+            .putExtra(NoiseService.EXTRA_NAME, name)
+            .putExtra(NoiseService.EXTRA_ID, id)
+        ContextCompat.startForegroundService(this, intent)
     }
 
     private fun pausePlayback() {
@@ -112,20 +134,119 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun update(params: Params) {
-        val id = Presets.match(params)?.id
-        ui.value = ui.value.copy(params = params, presetId = id)
-        service?.updateParams(params, id)
+    private fun toggleQuick(color: NoiseColor) {
+        val state = ui.value
+        if (state.playing && state.soundId == null && state.params.color == color) {
+            pausePlayback()
+        } else {
+            startPlayback(quickParams(color, store.volume), "${color.label} noise", null)
+        }
     }
 
-    private fun stepPreset(direction: Int) {
-        val presets = Presets.all
-        val current = presets.indexOfFirst { it.id == ui.value.presetId }
-        val next = when {
-            current < 0 -> if (direction > 0) 0 else presets.size - 1
-            else -> (current + direction + presets.size) % presets.size
+    private fun toggleSound(sound: SavedSound) {
+        val state = ui.value
+        if (state.playing && state.soundId == sound.id) {
+            pausePlayback()
+        } else {
+            startPlayback(sound.params(store.volume), sound.name, sound.id)
         }
-        update(presets[next].applyTo(ui.value.params))
+    }
+
+    private fun startPreview(draft: Draft) {
+        startPlayback(
+            draft.params(store.volume),
+            draft.name.ifBlank { "Custom sound" },
+            null,
+        )
+    }
+
+    private fun updatePreview(draft: Draft) {
+        val name = draft.name.ifBlank { "Custom sound" }
+        if (ui.value.playing) {
+            service?.updateParams(draft.params(store.volume), name, null)
+        } else {
+            startPlayback(draft.params(store.volume), name, null)
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Collection                                                          */
+    /* ------------------------------------------------------------------ */
+
+    private fun saveDraft(draft: Draft, editingId: String?, previewWasPlaying: Boolean) {
+        val id = editingId ?: UUID.randomUUID().toString()
+        val sound = SavedSound(
+            id = id,
+            name = draft.name,
+            color = draft.color,
+            deep = draft.deep,
+            rumble = draft.rumble,
+            width = draft.width,
+            swell = draft.swell,
+        )
+        val index = sounds.indexOfFirst { it.id == id }
+        if (index >= 0) sounds[index] = sound else sounds.add(0, sound)
+        store.saveSounds(sounds.toList())
+
+        val state = ui.value
+        if (previewWasPlaying) {
+            service?.updateParams(sound.params(store.volume), sound.name, sound.id)
+        } else if (state.soundId == sound.id) {
+            service?.updateParams(sound.params(store.volume), sound.name, sound.id)
+        }
+    }
+
+    private fun deleteSound(sound: SavedSound) {
+        sounds.removeAll { it.id == sound.id }
+        store.saveSounds(sounds.toList())
+        if (ui.value.soundId == sound.id) {
+            val s = service
+            if (s != null) {
+                s.stop()
+            } else {
+                startService(Intent(this, NoiseService::class.java).setAction(NoiseService.ACTION_STOP))
+            }
+        }
+    }
+
+    private fun putFirst(sound: SavedSound) {
+        val index = sounds.indexOfFirst { it.id == sound.id }
+        if (index > 0) {
+            sounds.removeAt(index)
+            sounds.add(0, sound)
+            store.saveSounds(sounds.toList())
+        }
+    }
+
+    private fun renameSound(sound: SavedSound, name: String) {
+        val index = sounds.indexOfFirst { it.id == sound.id }
+        if (index < 0) return
+        sounds[index] = sound.copy(name = name)
+        store.saveSounds(sounds.toList())
+        if (ui.value.soundId == sound.id) service?.setIdentity(sound.id, name)
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Settings                                                            */
+    /* ------------------------------------------------------------------ */
+
+    private fun setVolume(value: Float) {
+        store.volume = value
+        ui.value = ui.value.copy(params = ui.value.params.copy(volume = value))
+        service?.setVolume(value)
+    }
+
+    private fun setTimer(minutes: Int) {
+        val s = service
+        if (s != null) {
+            s.setTimer(minutes)
+        } else {
+            startService(
+                Intent(this, NoiseService::class.java)
+                    .setAction(NoiseService.ACTION_TIMER)
+                    .putExtra(NoiseService.EXTRA_MINUTES, minutes),
+            )
+        }
     }
 }
 

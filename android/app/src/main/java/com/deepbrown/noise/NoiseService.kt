@@ -31,7 +31,8 @@ import androidx.core.app.ServiceCompat
 data class UiState(
     val playing: Boolean = false,
     val params: Params = Params(),
-    val presetId: String? = "velvet",
+    val soundId: String? = null,
+    val soundName: String = "Brown noise",
     val timerEndWall: Long = 0L,
     val timerMin: Int = 0,
     val error: String? = null,
@@ -59,7 +60,8 @@ class NoiseService : Service() {
     private lateinit var wakeLock: PowerManager.WakeLock
 
     private var params = Params()
-    private var presetId: String? = "velvet"
+    private var soundId: String? = null
+    private var soundName: String = "Brown noise"
     private var playing = false
     private var resumeOnFocusGain = false
     private var foregroundStarted = false
@@ -82,7 +84,7 @@ class NoiseService : Service() {
                 if (playing) pauseInternal(abandonFocus = false, clearSleepTimer = false)
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                // Brown noise is already quiet; do not duck.
+                // The noise is already quiet; do not duck.
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
                 if (resumeOnFocusGain) {
@@ -123,7 +125,7 @@ class NoiseService : Service() {
         }
 
         val power = getSystemService(PowerManager::class.java)
-        wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DeepBrown:playback").apply {
+        wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ColorsOfNoise:playback").apply {
             setReferenceCounted(false)
         }
 
@@ -138,7 +140,25 @@ class NoiseService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_PLAY -> play()
+            ACTION_PLAY -> {
+                if (intent.hasExtra(EXTRA_COLOR)) {
+                    val newParams = Params(
+                        deep = intent.getFloatExtra(EXTRA_DEEP, params.deep),
+                        rumble = intent.getFloatExtra(EXTRA_RUMBLE, params.rumble),
+                        width = intent.getFloatExtra(EXTRA_WIDTH, params.width),
+                        swell = intent.getFloatExtra(EXTRA_SWELL, params.swell),
+                        volume = intent.getFloatExtra(EXTRA_VOLUME, params.volume),
+                        color = NoiseColor.fromKey(intent.getStringExtra(EXTRA_COLOR)),
+                    ).clamped()
+                    startSound(
+                        newParams,
+                        intent.getStringExtra(EXTRA_NAME) ?: "Noise",
+                        intent.getStringExtra(EXTRA_ID),
+                    )
+                } else {
+                    play()
+                }
+            }
             ACTION_PAUSE -> {
                 resumeOnFocusGain = false
                 pauseInternal(abandonFocus = true)
@@ -147,6 +167,28 @@ class NoiseService : Service() {
             ACTION_TIMER -> setTimer(intent.getIntExtra(EXTRA_MINUTES, 0))
         }
         return START_NOT_STICKY
+    }
+
+    /** Starts a different sound, or crossfades to it when already playing. */
+    private fun startSound(newParams: Params, name: String, id: String?) {
+        val wasPlaying = playing
+        params = newParams
+        soundName = name
+        soundId = id
+        persist()
+        updateSession()
+        if (!wasPlaying) {
+            play()
+            return
+        }
+        engine.setMasterTarget(0.0)
+        handler.postDelayed({
+            if (!playing) return@postDelayed
+            engine.setParams(params)
+            engine.setMasterTarget(1.0)
+        }, 180L)
+        updateNotification()
+        publish()
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -255,11 +297,45 @@ class NoiseService : Service() {
         }, FADE_OUT_MS + 80L)
     }
 
+    /** Stops playback entirely (used when the active sound is deleted). */
+    fun stop() {
+        stopPlayback()
+    }
+
     /* Called by the UI (through the binder). */
-    fun updateParams(newParams: Params, newPresetId: String?) {
+    fun updateParams(newParams: Params, name: String? = null, id: String? = null) {
+        val colorChanged = newParams.color != params.color
         params = newParams.clamped()
-        presetId = newPresetId
+        if (name != null) {
+            soundName = name
+            soundId = id
+        }
+        persist()
+        updateSession()
+        if (playing && colorChanged) {
+            engine.setMasterTarget(0.0)
+            handler.postDelayed({
+                if (!playing) return@postDelayed
+                engine.setParams(params)
+                engine.setMasterTarget(1.0)
+            }, 180L)
+        } else {
+            engine.setParams(params)
+        }
+        if (playing) updateNotification()
+        publish()
+    }
+
+    fun setVolume(value: Float) {
+        params = params.copy(volume = value.coerceIn(0f, 1f))
         engine.setParams(params)
+        persist()
+        publish()
+    }
+
+    fun setIdentity(id: String?, name: String) {
+        soundId = id
+        soundName = name
         persist()
         updateSession()
         if (playing) updateNotification()
@@ -311,7 +387,8 @@ class NoiseService : Service() {
         state = UiState(
             playing = playing,
             params = params,
-            presetId = presetId,
+            soundId = soundId,
+            soundName = soundName,
             timerEndWall = timerEndWall,
             timerMin = timerMin,
             error = errorText,
@@ -345,8 +422,11 @@ class NoiseService : Service() {
             width = prefs.getFloat(KEY_WIDTH, 0.60f),
             swell = prefs.getFloat(KEY_SWELL, 0.10f),
             volume = prefs.getFloat(KEY_VOLUME, 0.55f),
+            color = NoiseColor.fromKey(prefs.getString(KEY_COLOR, null)),
         ).clamped()
-        presetId = prefs.getString(KEY_PRESET, "velvet")
+        soundId = prefs.getString(KEY_SOUND_ID, null)
+        soundName = prefs.getString(KEY_SOUND_NAME, null)
+            ?: "${params.color.label} noise"
     }
 
     private fun persist() {
@@ -356,7 +436,9 @@ class NoiseService : Service() {
             .putFloat(KEY_WIDTH, params.width)
             .putFloat(KEY_SWELL, params.swell)
             .putFloat(KEY_VOLUME, params.volume)
-            .putString(KEY_PRESET, presetId)
+            .putString(KEY_COLOR, params.color.name)
+            .putString(KEY_SOUND_NAME, soundName)
+            .putString(KEY_SOUND_ID, soundId)
             .apply()
     }
 
@@ -388,7 +470,7 @@ class NoiseService : Service() {
     /* ------------------------------------------------------------------ */
 
     private fun createSession() {
-        session = MediaSession(this, "DeepBrown").apply {
+        session = MediaSession(this, "ColorsOfNoise").apply {
             setCallback(object : MediaSession.Callback() {
                 override fun onPlay() = this@NoiseService.play()
                 override fun onPause() {
@@ -408,12 +490,12 @@ class NoiseService : Service() {
     }
 
     private fun updateSession() {
-        val name = presetName()
+        val color = "${params.color.label} noise"
         session.setMetadata(
             MediaMetadata.Builder()
-                .putString(MediaMetadata.METADATA_KEY_TITLE, "Deep brown noise")
-                .putString(MediaMetadata.METADATA_KEY_ARTIST, name)
-                .putString(MediaMetadata.METADATA_KEY_ALBUM, "Deep Brown")
+                .putString(MediaMetadata.METADATA_KEY_TITLE, soundName)
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, color)
+                .putString(MediaMetadata.METADATA_KEY_ALBUM, "Colors of Noise")
                 .build(),
         )
         val pb = PlaybackState.Builder()
@@ -438,7 +520,7 @@ class NoiseService : Service() {
             "Playback",
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "Background brown-noise playback"
+            description = "Background noise playback"
             setShowBadge(false)
             lockscreenVisibility = Notification.VISIBILITY_PUBLIC
         }
@@ -466,8 +548,10 @@ class NoiseService : Service() {
         val icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play
         val builder = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_noise)
-            .setContentTitle("Deep brown noise")
-            .setContentText(if (playing) "${presetName()} · Playing" else "Paused")
+            .setContentTitle(soundName)
+            .setContentText(
+                if (playing) "${params.color.label} noise · Playing" else "Paused",
+            )
             .setContentIntent(contentIntent())
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -527,8 +611,6 @@ class NoiseService : Service() {
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 
-    private fun presetName(): String = Presets.byId(presetId)?.name ?: "Custom"
-
     private fun registerNoisyReceiver() {
         val filter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -544,6 +626,14 @@ class NoiseService : Service() {
         const val ACTION_STOP = "com.deepbrown.noise.STOP"
         const val ACTION_TIMER = "com.deepbrown.noise.TIMER"
         const val EXTRA_MINUTES = "minutes"
+        const val EXTRA_DEEP = "deep"
+        const val EXTRA_RUMBLE = "rumble"
+        const val EXTRA_WIDTH = "width"
+        const val EXTRA_SWELL = "swell"
+        const val EXTRA_VOLUME = "volume"
+        const val EXTRA_COLOR = "color"
+        const val EXTRA_NAME = "name"
+        const val EXTRA_ID = "id"
 
         private const val CHANNEL_ID = "playback"
         private const val NOTIF_ID = 42
@@ -554,6 +644,8 @@ class NoiseService : Service() {
         private const val KEY_WIDTH = "width"
         private const val KEY_SWELL = "swell"
         private const val KEY_VOLUME = "volume"
-        private const val KEY_PRESET = "preset"
+        private const val KEY_COLOR = "color"
+        private const val KEY_SOUND_NAME = "sound_name"
+        private const val KEY_SOUND_ID = "sound_id"
     }
 }

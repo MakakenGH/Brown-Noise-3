@@ -1,20 +1,22 @@
-# Deep Brown: brown noise generator (Android)
+# Colors of Noise: noise generator (Android)
 
-A native Android app that generates brown noise live on the device. Nothing is
-streamed or pre-recorded, so depth can be changed while it plays and the sound
-never repeats.
+A native Android app that generates white, brown, pink and green noise live on
+the device. Nothing is streamed or pre-recorded, so sounds never repeat and can
+be shaped while they play.
 
 ## What it does
 
-* The noise is generated natively and played by an `AudioTrack` from a
-  foreground media service.
-* It keeps playing when the app is minimized, the screen is off, or the
-  activity is gone.
-* It works over Bluetooth with lock-screen/headset controls.
-* A sleep timer fades out and stops the service.
-* Six presets (Velvet, Deep sleep, Abyss, Engine room, Tide, Focus) and the last
-  selected one is remembered.
-* It has no `INTERNET` permission, so it is fully offline.
+* Quick Noise: tap White, Brown, Pink or Green to start a generic noise of that
+  colour. It plays immediately and is not added to your collection.
+* Your Collection: save your own sounds with a name, colour, deepness, rumble,
+  width and swell. Sounds can be edited, renamed, deleted and moved to the top
+  of the list.
+* The Noise Generator editor previews changes live while it plays.
+* Volume and a sleep timer (15 min, 30 min, 1 h, 2 h) live in Settings.
+* Playback runs in a foreground media service, so it keeps going when the app is
+  minimized, the screen is off, or the activity is gone. Lock-screen and headset
+  controls work, including over Bluetooth.
+* No `INTERNET` permission: everything is generated on the phone.
 
 The persistent playback notification is required by Android for continuous
 background audio; use its **Stop** action to end playback.
@@ -25,11 +27,11 @@ Install the APK on the phone (allow “install unknown apps” for the file
 manager), or connect it with USB debugging enabled and run:
 
 ```
-/tmp/opencode/toolchain/android-sdk/platform-tools/adb install -r dist/deep-brown.apk
+adb install -r dist/colors-of-noise.apk
 ```
 
-If your phone has aggressive battery management, set Deep Brown to
-**Unrestricted** (Settings → Apps → Deep Brown → App battery usage).
+If your phone has aggressive battery management, set Colors of Noise to
+**Unrestricted** (Settings → Apps → Colors of Noise → App battery usage).
 
 ## Build
 
@@ -47,11 +49,20 @@ The project is a single-module Kotlin/Compose app:
 
 ```
 android/app/src/main/java/com/deepbrown/noise/
-  MainActivity.kt   UI entry point, service binding and permissions
-  Ui.kt             Compose screen, theme and controls
+  MainActivity.kt   UI entry point, service binding and library actions
+  App.kt            Home/editor navigation and bottom sheets
+  HomeScreen.kt     Quick Noise, the sound collection and bottom bar
+  EditorScreen.kt   Noise Generator editor with the deepness control
+  Sheets.kt         Sound settings, rename/naming and playback sheets
+  Components.kt     Rows, sliders, colour picker, icons and small parts
+  Theme.kt          Palette and typography
+  Model.kt          Noise colours, saved sounds and editor drafts
+  SoundStore.kt     Local persistence for the collection and volume
   NoiseService.kt   foreground media service, notification, media session
   NoiseEngine.kt    AudioTrack playback and gain/fade handling
-  NoiseDsp.kt       brown-noise generator and filter chain
-  Sound.kt          parameter mapping, presets and loudness model
-android/app/src/test/  JVM tests for the DSP
+  NoiseDsp.kt       noise generators and filter chain
+  Sound.kt          parameter mapping and loudness model
+android/app/src/main/res/font/   Fraunces and DM Sans (SIL Open Font License)
+android/app/src/test/           JVM tests for the DSP
+licenses/                       Font licences
 ```

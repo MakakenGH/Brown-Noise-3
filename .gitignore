@@ -6,3 +6,5 @@ android/app/build/
 android/.idea/
 android/*.iml
 dist/
+
+.openchamber/

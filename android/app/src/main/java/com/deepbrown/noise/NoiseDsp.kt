@@ -53,6 +53,23 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
     private var sCor = 0.8
     private var sInd = 0.6
 
+    /* Pink (Paul Kellet) and green (fixed band-pass) source state. */
+    private var pk0L = 0.0
+    private var pk1L = 0.0
+    private var pk2L = 0.0
+    private var pk0R = 0.0
+    private var pk1R = 0.0
+    private var pk2R = 0.0
+    private val gc = Sound.greenCoeffs(sampleRate)
+    private var gx1L = 0.0
+    private var gx2L = 0.0
+    private var gy1L = 0.0
+    private var gy2L = 0.0
+    private var gx1R = 0.0
+    private var gx2R = 0.0
+    private var gy1R = 0.0
+    private var gy2R = 0.0
+
     @Volatile private var target: DspParams = Params().toDsp()
     private var lastTarget: DspParams? = null
     private var makeup = 1.0
@@ -142,7 +159,7 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
             lastTarget = t
             // Computed here rather than on the UI thread: dragging a slider must
             // not run the loudness model on every pointer event.
-            makeup = Sound.levelGain(t.cutoffHz, t.shelfDb, sampleRate)
+            makeup = Sound.levelGain(t.cutoffHz, t.shelfDb, t.color, sampleRate)
         }
         val tCut = ln(max(t.cutoffHz, 10.0))
         val tShelf = t.shelfDb
@@ -150,6 +167,7 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         val tVol = t.volume
         val tSwell = t.swellCents
         val tWidth = t.width
+        val tColor = t.color
 
         if (!ready) {
             sCut = tCut
@@ -181,6 +199,20 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         var n = this.n
         var sCor = this.sCor
         var sInd = this.sInd
+        var pk0L = this.pk0L
+        var pk1L = this.pk1L
+        var pk2L = this.pk2L
+        var pk0R = this.pk0R
+        var pk1R = this.pk1R
+        var pk2R = this.pk2R
+        var gx1L = this.gx1L
+        var gx2L = this.gx2L
+        var gy1L = this.gy1L
+        var gy2L = this.gy2L
+        var gx1R = this.gx1R
+        var gx2R = this.gx2R
+        var gy1R = this.gy1R
+        var gy2R = this.gy2R
         var master = this.master
         val masterTarget = this.masterTarget
         val blockSleep = this.sleepGain
@@ -205,17 +237,58 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
                 sCor = sqrt(1.0 - sWidth * sWidth)
             }
 
-            // xorshift32 -> two independent brown-noise channels
+            // xorshift32 -> one uniform white sample per channel
             a = a xor (a shl 13)
             a = a xor (a ushr 17)
             a = a xor (a shl 5)
             b = b xor (b shl 13)
             b = b xor (b ushr 17)
             b = b xor (b shl 5)
-            yL = p * yL + g * ((a.toLong() and 0xFFFFFFFFL) / 2147483648.0 - 1.0)
-            yR = p * yR + g * ((b.toLong() and 0xFFFFFFFFL) / 2147483648.0 - 1.0)
-            var xL = yL
-            var xR = sCor * yL + sInd * yR
+            val wL = (a.toLong() and 0xFFFFFFFFL) / 2147483648.0 - 1.0
+            val wR = (b.toLong() and 0xFFFFFFFFL) / 2147483648.0 - 1.0
+
+            // Colour source. All sources are normalised to roughly 0.5 RMS
+            // (white is 0.577) so the loudness model can keep levels even.
+            var srcL: Double
+            var srcR: Double
+            when (tColor) {
+                NoiseColor.BROWN -> {
+                    yL = p * yL + g * wL
+                    yR = p * yR + g * wR
+                    srcL = yL
+                    srcR = yR
+                }
+                NoiseColor.WHITE -> {
+                    srcL = wL
+                    srcR = wR
+                }
+                NoiseColor.PINK -> {
+                    pk0L = 0.99765 * pk0L + wL * 0.0990460
+                    pk1L = 0.96300 * pk1L + wL * 0.2965164
+                    pk2L = 0.57000 * pk2L + wL * 1.0526913
+                    pk0R = 0.99765 * pk0R + wR * 0.0990460
+                    pk1R = 0.96300 * pk1R + wR * 0.2965164
+                    pk2R = 0.57000 * pk2R + wR * 1.0526913
+                    srcL = (pk0L + pk1L + pk2L + wL * 0.1848) * Sound.PINK_GAIN
+                    srcR = (pk0R + pk1R + pk2R + wR * 0.1848) * Sound.PINK_GAIN
+                }
+                NoiseColor.GREEN -> {
+                    val yl = gc[0] * wL + gc[1] * gx1L + gc[2] * gx2L - gc[3] * gy1L - gc[4] * gy2L
+                    gx2L = gx1L
+                    gx1L = wL
+                    gy2L = gy1L
+                    gy1L = yl
+                    val yr = gc[0] * wR + gc[1] * gx1R + gc[2] * gx2R - gc[3] * gy1R - gc[4] * gy2R
+                    gx2R = gx1R
+                    gx1R = wR
+                    gy2R = gy1R
+                    gy1R = yr
+                    srcL = yl * Sound.GREEN_GAIN
+                    srcR = yr * Sound.GREEN_GAIN
+                }
+            }
+            var xL = srcL
+            var xR = sCor * srcL + sInd * srcR
 
             // four biquad stages, transposed direct form II, per channel
             var s = 0
@@ -281,6 +354,20 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         this.n = n
         this.sCor = sCor
         this.sInd = sInd
+        this.pk0L = pk0L
+        this.pk1L = pk1L
+        this.pk2L = pk2L
+        this.pk0R = pk0R
+        this.pk1R = pk1R
+        this.pk2R = pk2R
+        this.gx1L = gx1L
+        this.gx2L = gx2L
+        this.gy1L = gy1L
+        this.gy2L = gy2L
+        this.gx1R = gx1R
+        this.gx2R = gx2R
+        this.gy1R = gy1R
+        this.gy2R = gy2R
         this.master = master
         this.scopePos = pos
     }

@@ -1,7 +1,6 @@
 package com.deepbrown.noise
 
 import kotlin.math.PI
-import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.ln
@@ -17,6 +16,7 @@ data class Params(
     val width: Float = 0.60f,
     val swell: Float = 0.10f,
     val volume: Float = 0.55f,
+    val color: NoiseColor = NoiseColor.BROWN,
 ) {
     fun clamped(): Params = Params(
         deep = deep.coerceIn(0f, 1f),
@@ -24,6 +24,7 @@ data class Params(
         width = width.coerceIn(0f, 1f),
         swell = swell.coerceIn(0f, 1f),
         volume = volume.coerceIn(0f, 1f),
+        color = color,
     )
 
     fun with(key: String, value: Float): Params = when (key) {
@@ -36,38 +37,6 @@ data class Params(
     }
 }
 
-data class Preset(
-    val id: String,
-    val name: String,
-    val deep: Float,
-    val rumble: Float,
-    val width: Float,
-    val swell: Float,
-) {
-    fun applyTo(p: Params): Params = p.copy(deep = deep, rumble = rumble, width = width, swell = swell)
-}
-
-object Presets {
-    val all: List<Preset> = listOf(
-        Preset("velvet", "Velvet", 0.50f, 0.35f, 0.60f, 0.10f),
-        Preset("deep-sleep", "Deep sleep", 0.78f, 0.50f, 0.70f, 0.15f),
-        Preset("abyss", "Abyss", 0.97f, 0.75f, 0.45f, 0.05f),
-        Preset("engine-room", "Engine room", 0.30f, 0.60f, 0.30f, 0.00f),
-        Preset("tide", "Tide", 0.62f, 0.40f, 0.90f, 0.65f),
-        Preset("focus", "Focus", 0.20f, 0.15f, 0.55f, 0.00f),
-    )
-
-    fun byId(id: String?): Preset? = all.firstOrNull { it.id == id }
-
-    /** A preset is active only when all four shape controls match. */
-    fun match(p: Params): Preset? = all.firstOrNull {
-        abs(p.deep - it.deep) < 0.006f &&
-            abs(p.rumble - it.rumble) < 0.006f &&
-            abs(p.width - it.width) < 0.006f &&
-            abs(p.swell - it.swell) < 0.006f
-    }
-}
-
 /** Parameters in the units the audio thread wants. */
 data class DspParams(
     val cutoffHz: Double,
@@ -75,6 +44,7 @@ data class DspParams(
     val width: Double,
     val swellCents: Double,
     val volume: Double,
+    val color: NoiseColor = NoiseColor.BROWN,
 )
 
 object Sound {
@@ -82,17 +52,28 @@ object Sound {
     const val HP_HZ = 18.0
     const val TARGET_RMS = 0.14
 
+    /** Green noise is a broad band around this frequency. */
+    const val GREEN_HZ = 500.0
+    const val GREEN_Q = 0.9
+
+    /** The pinking filter's output RMS for uniform white input is ~1.71. */
+    const val PINK_GAIN = 0.292
+
+    /** The 500 Hz band-pass leaves ~0.109 RMS of uniform white noise. */
+    const val GREEN_GAIN = 4.60
+
     fun cutoffHz(deep: Float): Double = 900.0 * (40.0 / 900.0).pow(deep.toDouble())
     fun shelfDb(rumble: Float): Double = rumble.toDouble() * 12.0
     fun swellCents(swell: Float): Double = swell.toDouble() * 700.0
     fun volumeGain(volume: Float): Double = volume.toDouble() * volume.toDouble()
 
     /* Loudness model: the RMS of the filtered noise from the filters' exact
-     * frequency responses, so the level stays even while depth and rumble
-     * change. */
-    fun levelGain(cut: Double, shelf: Double, fs: Int = 48000): Double {
+     * frequency responses, so the level stays even while depth, rumble and
+     * colour change. */
+    fun levelGain(cut: Double, shelf: Double, color: NoiseColor, fs: Int = 48000): Double {
         val filters = filterSet(cut, shelf, fs)
         val a = exp(-2.0 * PI * 10.0 / fs)
+        val green = greenCoeffs(fs)
         val n = 360
         val f0 = 0.1
         val f1 = fs / 2.0 * 0.999
@@ -102,14 +83,24 @@ object Sound {
         for (i in 0 until n) {
             val f = f0 * exp(i * dl)
             val w = 2.0 * PI * f / fs
-            val psd = 1.0 / (1.0 - 2.0 * a * cos(w) + a * a)
+            val psd = when (color) {
+                NoiseColor.BROWN -> 1.0 / (1.0 - 2.0 * a * cos(w) + a * a)
+                NoiseColor.WHITE -> 1.0
+                NoiseColor.PINK -> 1.0 / max(f, 1.0)
+                NoiseColor.GREEN -> mag2(green, w)
+            }
             var h = 1.0
             for (c in filters) h *= mag2(c, w)
             num += psd * h * f
             den += psd * f
         }
-        val rmsPre = 0.5 * sqrt(num / den)
-        return (TARGET_RMS / rmsPre).coerceIn(0.05, 14.0)
+        val sourceRms = when (color) {
+            NoiseColor.BROWN -> 0.5
+            NoiseColor.WHITE -> 1.0 / sqrt(3.0)
+            NoiseColor.PINK, NoiseColor.GREEN -> 0.5
+        }
+        val rmsPre = sourceRms * sqrt(num / den)
+        return (TARGET_RMS / rmsPre).coerceIn(0.05, 60.0)
     }
 
     private const val Q_BUTTER_DB = -3.0103
@@ -121,6 +112,15 @@ object Sound {
         coeffs("lowpass", cut, Q_LP2_DB, 0.0, fs),
         coeffs("lowshelf", SHELF_HZ, 0.0, shelf, fs),
     )
+
+    /** RBJ band-pass coefficients for the green noise source. */
+    fun greenCoeffs(fs: Int): DoubleArray {
+        val w0 = 2.0 * PI * GREEN_HZ / fs
+        val alpha = sin(w0) / (2.0 * GREEN_Q)
+        val cs = cos(w0)
+        val a0 = 1.0 + alpha
+        return doubleArrayOf(alpha / a0, 0.0, -alpha / a0, -2.0 * cs / a0, (1.0 - alpha) / a0)
+    }
 
     private fun coeffs(type: String, f0: Double, qDb: Double, gDb: Double, fs: Int): DoubleArray {
         val w0 = 2.0 * PI * f0 / fs
@@ -181,5 +181,6 @@ fun Params.toDsp(): DspParams {
         width = width.toDouble(),
         swellCents = Sound.swellCents(swell),
         volume = Sound.volumeGain(volume),
+        color = color,
     )
 }
