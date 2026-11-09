@@ -1,11 +1,19 @@
 package com.deepbrown.noise
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 
 private sealed interface Screen {
     data object Home : Screen
@@ -25,9 +33,12 @@ fun ColorsOfNoiseApp(
     onQuick: (NoiseColor) -> Unit,
     onPlaySound: (SavedSound) -> Unit,
     onToggleNowPlaying: () -> Unit,
-    onSaveDraft: (Draft, String?, Boolean) -> Unit,
+    onSaveDraft: (Draft, String?, Boolean) -> SavedSound,
     onDeleteSound: (SavedSound) -> Unit,
-    onPutFirst: (SavedSound) -> Unit,
+    onMoveSound: (Int, Int) -> Unit,
+    onReorderFinished: () -> Unit,
+    onReorderHintSeen: () -> Unit,
+    showReorderHint: Boolean,
     onRenameSound: (SavedSound, String) -> Unit,
     onVolume: (Float) -> Unit,
     onTimer: (Int) -> Unit,
@@ -42,6 +53,14 @@ fun ColorsOfNoiseApp(
     var previewActive by remember { mutableStateOf(false) }
     var previewTouched by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<SavedSound?>(null) }
+    var justSavedId by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(justSavedId) {
+        if (justSavedId != null) {
+            delay(1_300)
+            justSavedId = null
+        }
+    }
 
     LaunchedEffect(ui.playing) {
         if (!ui.playing) previewActive = false
@@ -79,7 +98,20 @@ fun ColorsOfNoiseApp(
         screen = Screen.Home
     }
 
-    when (val current = screen) {
+    AnimatedContent(
+        targetState = screen,
+        transitionSpec = {
+            if (targetState is Screen.Editor) {
+                (slideInVertically(tween(260)) { it / 8 } + fadeIn(tween(220))) togetherWith
+                    fadeOut(tween(140))
+            } else {
+                fadeIn(tween(220)) togetherWith
+                    (fadeOut(tween(160)) + slideOutVertically(tween(240)) { it / 10 })
+            }
+        },
+        label = "screen",
+    ) { current ->
+        when (current) {
         Screen.Home -> {
             HomeScreen(
                 sounds = sounds,
@@ -97,6 +129,12 @@ fun ColorsOfNoiseApp(
                 onToggleNowPlaying = onToggleNowPlaying,
                 onCreate = { openEditor(null) },
                 onSettings = { sheet = HomeSheet.Playback },
+                timerEndWall = ui.timerEndWall,
+                highlightId = justSavedId,
+                showReorderHint = showReorderHint,
+                onReorderHintSeen = onReorderHintSeen,
+                onMoveSound = onMoveSound,
+                onReorderFinished = onReorderFinished,
             )
         }
         is Screen.Editor -> {
@@ -112,7 +150,8 @@ fun ColorsOfNoiseApp(
                 },
                 onBack = { leaveEditor() },
                 onSave = { draft ->
-                    onSaveDraft(draft, current.sound?.id, previewTouched)
+                    val saved = onSaveDraft(draft, current.sound?.id, previewTouched)
+                    justSavedId = saved.id
                     previewActive = false
                     previewTouched = false
                     screen = Screen.Home
@@ -129,6 +168,7 @@ fun ColorsOfNoiseApp(
                 },
             )
         }
+        }
     }
 
     when (val current = sheet) {
@@ -138,10 +178,6 @@ fun ColorsOfNoiseApp(
                 onEdit = {
                     sheet = null
                     openEditor(current.sound)
-                },
-                onPutFirst = {
-                    onPutFirst(current.sound)
-                    sheet = null
                 },
                 onRename = { sheet = HomeSheet.Rename(current.sound) },
                 onDelete = {

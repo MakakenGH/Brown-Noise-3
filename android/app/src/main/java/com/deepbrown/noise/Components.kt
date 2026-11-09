@@ -11,6 +11,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.IndicationNodeFactory
 import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -34,6 +35,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -53,7 +56,10 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -62,6 +68,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -69,14 +76,20 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.node.DelegatableNode
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -87,6 +100,7 @@ import kotlinx.coroutines.isActive
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.sqrt
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
@@ -109,6 +123,33 @@ fun Modifier.noRippleClickable(
         enabled = enabled,
         onClick = onClick,
     )
+}
+
+/** Quiet press feedback: a small scale, no ripple or flash. */
+@Composable
+fun Modifier.pressable(
+    scale: Float = 0.97f,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+): Modifier {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val currentScale by animateFloatAsState(
+        targetValue = if (pressed) scale else 1f,
+        animationSpec = tween(90),
+        label = "press scale",
+    )
+    return this
+        .graphicsLayer {
+            scaleX = currentScale
+            scaleY = currentScale
+        }
+        .clickable(
+            interactionSource = interaction,
+            indication = null,
+            enabled = enabled,
+            onClick = onClick,
+        )
 }
 
 /* ---------------------------------------------------------------------- */
@@ -181,7 +222,7 @@ fun MusicNoteIcon(tint: Color, size: Dp) {
 fun NoiseAura(color: Color, modifier: Modifier = Modifier) {
     val aura by animateColorAsState(
         targetValue = color,
-        animationSpec = tween(1_600, easing = FastOutSlowInEasing),
+        animationSpec = tween(1_200, easing = FastOutSlowInEasing),
         label = "aura colour",
     )
     Canvas(modifier) {
@@ -250,6 +291,32 @@ fun LiveWaveform(
     }
 }
 
+@Composable
+fun rememberAudioLevel(scope: () -> FloatArray?, playing: Boolean): androidx.compose.runtime.State<Float> {
+    val level = remember { mutableFloatStateOf(0f) }
+    val currentScope by rememberUpdatedState(scope)
+    LaunchedEffect(playing) {
+        if (!playing) {
+            level.floatValue = 0f
+            return@LaunchedEffect
+        }
+        var last = 0L
+        while (isActive) {
+            withFrameNanos { now ->
+                if (now - last < 33_000_000L) return@withFrameNanos
+                last = now
+                val data = currentScope() ?: return@withFrameNanos
+                var sum = 0.0
+                for (v in data) sum += v.toDouble() * v
+                val rms = sqrt(sum / data.size)
+                val target = (rms * 4.0).toFloat().coerceIn(0f, 1f)
+                level.floatValue = level.floatValue * 0.80f + target * 0.20f
+            }
+        }
+    }
+    return level
+}
+
 private fun idleWave(points: Int): FloatArray = FloatArray(points) { i ->
     val x = i.toFloat() / points
     (0.22 * sin(x * 6.28318 * 2.2) + 0.10 * sin(x * 6.28318 * 5.1)).toFloat()
@@ -265,6 +332,7 @@ fun ColorOrb(
     size: Dp,
     modifier: Modifier = Modifier,
     ring: Boolean = false,
+    ringAlpha: Float = 1f,
 ) {
     Box(
         modifier = modifier.size(size + if (ring) 8.dp else 0.dp),
@@ -275,7 +343,7 @@ fun ColorOrb(
                 Modifier
                     .fillMaxSize()
                     .clip(CircleShape)
-                    .border(1.5.dp, color.copy(alpha = 0.85f), CircleShape),
+                    .border(1.5.dp, color.copy(alpha = 0.85f * ringAlpha), CircleShape),
             )
         }
         Box(
@@ -349,9 +417,9 @@ fun PrimaryButton(
         modifier = Modifier
             .fillMaxWidth()
             .height(54.dp)
+            .pressable(scale = 0.98f, enabled = enabled, onClick = onClick)
             .clip(RoundedCornerShape(18.dp))
-            .background(background)
-            .clickable(enabled = enabled, onClick = onClick),
+            .background(background),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -367,7 +435,33 @@ fun NameField(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     placeholder: String = "Name",
+    autoFocus: Boolean = false,
+    selectAll: Boolean = false,
+    onSubmit: (() -> Unit)? = null,
 ) {
+    var field by remember {
+        mutableStateOf(
+            TextFieldValue(
+                text = value,
+                selection = if (selectAll) TextRange(0, value.length) else TextRange(value.length),
+            ),
+        )
+    }
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(value) {
+        if (field.text != value) {
+            field = field.copy(text = value, selection = TextRange(value.length))
+        }
+    }
+    LaunchedEffect(autoFocus) {
+        if (autoFocus) {
+            focusRequester.requestFocus()
+            keyboard?.show()
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -379,8 +473,11 @@ fun NameField(
         contentAlignment = Alignment.CenterStart,
     ) {
         BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
+            value = field,
+            onValueChange = {
+                field = it
+                onValueChange(it.text)
+            },
             singleLine = true,
             textStyle = TextStyle(
                 fontFamily = DmSans,
@@ -389,9 +486,13 @@ fun NameField(
                 color = OnSurface,
             ),
             cursorBrush = SolidColor(OnSurface),
-            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { onSubmit?.invoke() }),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester),
             decorationBox = { inner ->
-                if (value.isEmpty()) {
+                if (field.text.isEmpty()) {
                     Text(placeholder, fontFamily = DmSans, fontSize = 14.sp, color = LabelMuted)
                 }
                 inner()
@@ -412,7 +513,7 @@ fun ActionRow(
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp)
-            .clickable(onClick = onClick)
+            .pressable(scale = 0.995f, onClick = onClick)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -461,11 +562,11 @@ fun ColorSelector(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .clip(RoundedCornerShape(20.dp))
-                    .clickable {
+                    .pressable(scale = 0.96f) {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         onSelect(color)
                     }
+                    .clip(RoundedCornerShape(20.dp))
                     .semantics {
                         contentDescription = "${color.label} Noise"
                         this.selected = active
@@ -639,7 +740,6 @@ fun SectionHeader(title: String, trailing: String? = null) {
 @Composable
 fun SoundsHeader(
     count: Int,
-    accent: Color,
     onAdd: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -659,34 +759,21 @@ fun SoundsHeader(
                 fontSize = 11.5.sp,
                 color = LabelMuted,
             )
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(8.dp))
         }
-        Row(
+        Box(
             modifier = Modifier
-                .height(34.dp)
-                .clip(RoundedCornerShape(17.dp))
-                .background(SurfaceHigh)
-                .border(1.dp, Hairline, RoundedCornerShape(17.dp))
-                .noRippleClickable(onClick = onAdd)
-                .padding(start = 4.dp, end = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .size(44.dp)
+                .clip(CircleShape)
+                .pressable(scale = 0.86f, onClick = onAdd)
+                .semantics { contentDescription = "Create sound" },
+            contentAlignment = Alignment.Center,
         ) {
-            Box(
-                Modifier
-                    .size(26.dp)
-                    .clip(CircleShape)
-                    .background(accent),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null, tint = Ink, modifier = Modifier.size(15.dp))
-            }
-            Spacer(Modifier.width(7.dp))
-            Text(
-                text = "Add sounds",
-                fontFamily = DmSans,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 11.5.sp,
-                color = OnSurface,
+            Icon(
+                Icons.Default.Add,
+                contentDescription = null,
+                tint = OnSurfaceVariant,
+                modifier = Modifier.size(20.dp),
             )
         }
     }
@@ -697,24 +784,48 @@ fun SoundRow(
     sound: SavedSound,
     active: Boolean,
     playing: Boolean,
+    highlight: Boolean,
     onPlay: () -> Unit,
     onMenu: () -> Unit,
+    onMoveUp: (() -> Unit)? = null,
+    onMoveDown: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
 ) {
     val orbColor = soundOrbColor(sound.color.dot, sound.deep)
     val dot by animateFloatAsState(if (playing && active) 1f else 0.45f, tween(400), label = "status")
     val border by animateColorAsState(
-        if (active) orbColor.copy(alpha = 0.55f) else Hairline,
-        tween(450, easing = FastOutSlowInEasing),
+        when {
+            highlight -> orbColor.copy(alpha = 0.95f)
+            active -> orbColor.copy(alpha = 0.55f)
+            else -> Hairline
+        },
+        tween(if (highlight) 260 else 450, easing = FastOutSlowInEasing),
         label = "row border",
     )
+    val moveActions = buildList {
+        onMoveUp?.let { move ->
+            add(CustomAccessibilityAction("Move up") { move(); true })
+        }
+        onMoveDown?.let { move ->
+            add(CustomAccessibilityAction("Move down") { move(); true })
+        }
+    }
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(72.dp)
+            .shadow(
+                elevation = if (highlight) 12.dp else 0.dp,
+                shape = RoundedCornerShape(24.dp),
+                clip = false,
+            )
             .clip(RoundedCornerShape(24.dp))
             .background(Surface)
             .border(1.dp, border, RoundedCornerShape(24.dp))
             .noRippleClickable(onClick = onPlay)
+            .semantics {
+                if (moveActions.isNotEmpty()) customActions = moveActions
+            }
             .padding(start = 16.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -752,7 +863,7 @@ fun SoundRow(
             modifier = Modifier
                 .size(40.dp)
                 .clip(CircleShape)
-                .noRippleClickable(onClick = onMenu),
+                .pressable(scale = 0.86f, onClick = onMenu),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
@@ -772,15 +883,23 @@ fun NowPlayingCard(
     color: Color,
     playing: Boolean,
     scope: () -> FloatArray?,
+    timerText: String?,
+    onTimerClick: () -> Unit,
     onOpen: () -> Unit,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val accent by animateColorAsState(color, tween(900, easing = FastOutSlowInEasing), label = "now playing colour")
+    val accent by animateColorAsState(
+        targetValue = color,
+        animationSpec = tween(1_200, easing = FastOutSlowInEasing),
+        label = "now playing colour",
+    )
+    val level = rememberAudioLevel(scope, playing)
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(80.dp)
+            .pressable(scale = 0.995f, onClick = onOpen)
             .shadow(
                 elevation = 20.dp,
                 shape = RoundedCornerShape(24.dp),
@@ -796,11 +915,27 @@ fun NowPlayingCard(
                 ),
             )
             .border(1.dp, accent.copy(alpha = 0.26f), RoundedCornerShape(24.dp))
-            .noRippleClickable(onClick = onOpen)
             .padding(start = 16.dp, end = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ColorOrb(accent, 38.dp, ring = true)
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .graphicsLayer {
+                    val s = 1f + level.value * 0.05f
+                    scaleX = s
+                    scaleY = s
+                }
+                .drawBehind {
+                    drawCircle(
+                        color = accent.copy(alpha = 0.08f + level.value * 0.26f),
+                        radius = size.minDimension * 0.48f,
+                    )
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            ColorOrb(accent, 38.dp, ring = true)
+        }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
@@ -812,13 +947,36 @@ fun NowPlayingCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                text = subtitle,
-                fontFamily = DmSans,
-                fontSize = 12.sp,
-                color = OnSurfaceVariant,
-                maxLines = 1,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = subtitle,
+                    fontFamily = DmSans,
+                    fontSize = 12.sp,
+                    color = OnSurfaceVariant,
+                    maxLines = 1,
+                )
+                if (timerText != null) {
+                    Spacer(Modifier.width(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .height(20.dp)
+                            .clip(RoundedCornerShape(7.dp))
+                            .background(OnSurface.copy(alpha = 0.07f))
+                            .noRippleClickable(onClick = onTimerClick)
+                            .padding(horizontal = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TimerGlyph(OnSurfaceVariant, 10.dp)
+                        Spacer(Modifier.width(3.dp))
+                        Text(
+                            text = timerText,
+                            style = Numeric,
+                            fontSize = 10.sp,
+                            color = OnSurfaceVariant,
+                        )
+                    }
+                }
+            }
         }
         LiveWaveform(
             color = accent,
@@ -832,9 +990,9 @@ fun NowPlayingCard(
         Box(
             modifier = Modifier
                 .size(44.dp)
+                .pressable(scale = 0.90f, onClick = onToggle)
                 .clip(CircleShape)
                 .background(accent)
-                .noRippleClickable(onClick = onToggle)
                 .semantics { contentDescription = if (playing) "Pause" else "Play" },
             contentAlignment = Alignment.Center,
         ) {
@@ -846,14 +1004,41 @@ fun NowPlayingCard(
 }
 
 @Composable
+fun TimerGlyph(tint: Color, size: Dp) {
+    Canvas(Modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        drawCircle(
+            color = tint.copy(alpha = 0.8f),
+            radius = minOf(w, h) * 0.42f,
+            style = Stroke(width = 1.1.dp.toPx()),
+        )
+        drawLine(
+            color = tint.copy(alpha = 0.8f),
+            start = Offset(w * 0.5f, h * 0.5f),
+            end = Offset(w * 0.5f, h * 0.24f),
+            strokeWidth = 1.1.dp.toPx(),
+            cap = androidx.compose.ui.graphics.StrokeCap.Round,
+        )
+        drawLine(
+            color = tint.copy(alpha = 0.8f),
+            start = Offset(w * 0.5f, h * 0.5f),
+            end = Offset(w * 0.72f, h * 0.58f),
+            strokeWidth = 1.1.dp.toPx(),
+            cap = androidx.compose.ui.graphics.StrokeCap.Round,
+        )
+    }
+}
+
+@Composable
 fun EmptySounds(onCreate: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .pressable(scale = 0.995f, onClick = onCreate)
             .clip(RoundedCornerShape(24.dp))
             .background(Surface)
             .border(1.dp, Hairline, RoundedCornerShape(24.dp))
-            .clickable(onClick = onCreate)
             .padding(horizontal = 24.dp, vertical = 26.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -900,10 +1085,10 @@ fun BottomBar(onSettings: () -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp)
+                .pressable(scale = 0.99f, onClick = onSettings)
                 .clip(RoundedCornerShape(18.dp))
                 .background(SurfaceHigh)
-                .border(1.dp, Hairline, RoundedCornerShape(18.dp))
-                .noRippleClickable(onClick = onSettings),
+                .border(1.dp, Hairline, RoundedCornerShape(18.dp)),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {

@@ -10,10 +10,12 @@ be shaped while they play.
   that colour. It plays immediately and is not added to your collection.
 * My sounds: save your own sounds with a name, colour, deepness, rumble, width
   and swell. Tap a saved sound to play or stop it; its three-dot menu opens edit,
-  rename, reorder and delete. Add sounds from the button next to the header.
+  rename and delete. Add a sound with the plus next to the header. Hold a card and
+  drag to reorder the collection.
 * A now-playing card above the bottom bar always shows the loaded sound and lets
   you play or pause it. Tap its body to open the sound in the editor.
-* Volume and a sleep timer (15 min, 30 min, 1 h, 2 h) live in Playback settings.
+* Volume and a sleep timer (15 min, 30 min, 1 h, 2 h) live in Playback settings;
+  the remaining time appears in the now-playing card while a timer is running.
 * The Noise Generator editor previews changes live while it plays.
 * Playback runs in a foreground media service, so it keeps going when the app is
   minimized, the screen is off, or the activity is gone. Lock-screen and headset

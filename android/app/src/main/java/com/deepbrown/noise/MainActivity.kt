@@ -31,6 +31,7 @@ class MainActivity : ComponentActivity() {
     private var service: NoiseService? = null
     private val ui = mutableStateOf(UiState())
     private val sounds = mutableStateListOf<SavedSound>()
+    private val showReorderHint = mutableStateOf(false)
     private var bound = false
     private lateinit var store: SoundStore
 
@@ -58,6 +59,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         store = SoundStore(this)
         sounds.addAll(store.loadSounds())
+        showReorderHint.value = !store.reorderHintSeen
         enableEdgeToEdge()
         WindowCompat.getInsetsController(window, window.decorView).apply {
             isAppearanceLightStatusBars = false
@@ -81,7 +83,10 @@ class MainActivity : ComponentActivity() {
                         onToggleNowPlaying = ::toggleNowPlaying,
                         onSaveDraft = ::saveDraft,
                         onDeleteSound = ::deleteSound,
-                        onPutFirst = ::putFirst,
+                        onMoveSound = ::moveSound,
+                        onReorderFinished = ::persistOrder,
+                        onReorderHintSeen = ::markReorderHintSeen,
+                        showReorderHint = showReorderHint.value,
                         onRenameSound = ::renameSound,
                         onVolume = ::setVolume,
                         onTimer = ::setTimer,
@@ -200,7 +205,7 @@ class MainActivity : ComponentActivity() {
     /* Collection                                                          */
     /* ------------------------------------------------------------------ */
 
-    private fun saveDraft(draft: Draft, editingId: String?, adoptPlayback: Boolean) {
+    private fun saveDraft(draft: Draft, editingId: String?, adoptPlayback: Boolean): SavedSound {
         val id = editingId ?: UUID.randomUUID().toString()
         val sound = SavedSound(
             id = id,
@@ -221,6 +226,7 @@ class MainActivity : ComponentActivity() {
         } else if (state.soundId == sound.id) {
             service?.updateParams(sound.params(store.volume), sound.name, sound.id)
         }
+        return sound
     }
 
     private fun deleteSound(sound: SavedSound) {
@@ -236,12 +242,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun putFirst(sound: SavedSound) {
-        val index = sounds.indexOfFirst { it.id == sound.id }
-        if (index > 0) {
-            sounds.removeAt(index)
-            sounds.add(0, sound)
-            store.saveSounds(sounds.toList())
+    private fun moveSound(from: Int, to: Int) {
+        if (from == to || from !in sounds.indices || to !in sounds.indices) return
+        val sound = sounds.removeAt(from)
+        sounds.add(to, sound)
+    }
+
+    private fun persistOrder() {
+        store.saveSounds(sounds.toList())
+    }
+
+    private fun markReorderHintSeen() {
+        if (showReorderHint.value) {
+            showReorderHint.value = false
+            store.reorderHintSeen = true
         }
     }
 

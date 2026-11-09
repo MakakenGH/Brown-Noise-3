@@ -42,11 +42,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -80,9 +82,10 @@ fun EditorScreen(
     var showDiscard by remember { mutableStateOf(false) }
     val accent by androidx.compose.animation.animateColorAsState(
         targetValue = draft.color.dot,
-        animationSpec = tween(900, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        animationSpec = tween(1_200, easing = androidx.compose.animation.core.FastOutSlowInEasing),
         label = "editor accent",
     )
+    val audioLevel = rememberAudioLevel(scope, previewing)
 
     fun update(next: Draft) {
         draft = next
@@ -113,10 +116,10 @@ fun EditorScreen(
                 Box(
                     modifier = Modifier
                         .size(40.dp)
+                        .pressable(scale = 0.90f) { requestBack() }
                         .clip(CircleShape)
                         .background(SurfaceHigh)
-                        .border(1.dp, Hairline, CircleShape)
-                        .clickable { requestBack() },
+                        .border(1.dp, Hairline, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
@@ -139,11 +142,11 @@ fun EditorScreen(
                     modifier = Modifier
                         .size(44.dp)
                         .shadow(14.dp, CircleShape)
-                        .clip(CircleShape)
-                        .background(accent)
-                        .clickable {
+                        .pressable(scale = 0.90f) {
                             if (draft.name.isBlank()) showNameSheet = true else onSave(draft)
-                        },
+                        }
+                        .clip(CircleShape)
+                        .background(accent),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(Icons.Default.Check, contentDescription = "Save", tint = Ink, modifier = Modifier.size(20.dp))
@@ -210,6 +213,7 @@ fun EditorScreen(
                 .padding(horizontal = 16.dp, vertical = 10.dp)
                 .fillMaxWidth()
                 .height(76.dp)
+                .pressable(scale = 0.995f) { onTogglePreview(draft) }
                 .shadow(
                     elevation = 22.dp,
                     shape = RoundedCornerShape(24.dp),
@@ -225,11 +229,27 @@ fun EditorScreen(
                     ),
                 )
                 .border(1.dp, accent.copy(alpha = 0.26f), RoundedCornerShape(24.dp))
-                .clickable { onTogglePreview(draft) }
                 .padding(start = 14.dp, end = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ColorOrb(soundOrbColor(draft.color.dot, draft.deep), 34.dp, ring = true)
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .graphicsLayer {
+                        val s = 1f + audioLevel.value * 0.05f
+                        scaleX = s
+                        scaleY = s
+                    }
+                    .drawBehind {
+                        drawCircle(
+                            color = accent.copy(alpha = 0.08f + audioLevel.value * 0.24f),
+                            radius = size.minDimension * 0.48f,
+                        )
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                ColorOrb(soundOrbColor(draft.color.dot, draft.deep), 34.dp, ring = true)
+            }
             Spacer(Modifier.width(12.dp))
             Column(
                 Modifier
@@ -324,6 +344,7 @@ private fun DeepnessField(
     val feedback = LocalHapticFeedback.current
     var lastStep by remember { mutableStateOf((draft.deep * 100).roundToInt()) }
     var touched by remember { mutableStateOf(false) }
+    var dragging by remember { mutableStateOf(false) }
     val accent = draft.color.dot
     val handleY = draft.deep
 
@@ -336,7 +357,12 @@ private fun DeepnessField(
             .border(1.dp, Hairline, RoundedCornerShape(32.dp))
             .pointerInput(Unit) {
                 detectVerticalDragGestures(
-                    onDragStart = { touched = true },
+                    onDragStart = {
+                        touched = true
+                        dragging = true
+                    },
+                    onDragEnd = { dragging = false },
+                    onDragCancel = { dragging = false },
                     onVerticalDrag = { change, dy ->
                         change.consume()
                         val next = (currentDraft.deep + dy / size.height.toFloat()).coerceIn(0f, 1f)
@@ -400,6 +426,13 @@ private fun DeepnessField(
                 )
             }
             val y = top + (bottom - top) * handleY
+            if (dragging) {
+                drawCircle(
+                    color = accent.copy(alpha = 0.22f),
+                    radius = 14.dp.toPx(),
+                    center = Offset(w - 29.dp.toPx(), y),
+                )
+            }
             drawRoundRect(
                 color = OnSurface,
                 topLeft = Offset(w - 44.dp.toPx(), y - 1.5.dp.toPx()),

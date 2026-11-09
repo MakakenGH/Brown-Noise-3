@@ -64,7 +64,6 @@ private fun Sheet(
 fun SoundSettingsSheet(
     sound: SavedSound,
     onEdit: () -> Unit,
-    onPutFirst: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
     onDismiss: () -> Unit,
@@ -98,12 +97,6 @@ fun SoundSettingsSheet(
                     label = "Edit sound",
                     icon = { MusicNoteIcon(OnSurface, 20.dp) },
                     onClick = onEdit,
-                )
-                HairlineDivider(startPadding = 50.dp)
-                ActionRow(
-                    label = "Move to top",
-                    icon = { Icon(Icons.Default.List, null, tint = OnSurface, modifier = Modifier.size(20.dp)) },
-                    onClick = onPutFirst,
                 )
                 HairlineDivider(startPadding = 50.dp)
                 ActionRow(
@@ -159,6 +152,11 @@ fun NameSheet(
                 value = value,
                 onValueChange = { value = it },
                 placeholder = placeholder,
+                autoFocus = true,
+                selectAll = initial.isNotEmpty(),
+                onSubmit = {
+                    if (value.isNotBlank()) onSave(value.trim())
+                },
             )
             PrimaryButton(
                 text = confirmLabel,
@@ -239,12 +237,12 @@ fun PlaybackSettingsSheet(
                                     modifier = Modifier
                                         .weight(1f)
                                         .height(38.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(if (selected) OnSurface else SurfaceHigh)
-                                        .clickable {
+                                        .pressable(scale = 0.94f) {
                                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             onTimer(minutes)
-                                        },
+                                        }
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(if (selected) OnSurface else SurfaceHigh),
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Text(

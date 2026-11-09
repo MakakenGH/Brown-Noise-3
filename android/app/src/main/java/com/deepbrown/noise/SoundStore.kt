@@ -58,9 +58,16 @@ class SoundStore(context: Context) {
             prefs.edit().putFloat(KEY_VOLUME, value.coerceIn(0f, 1f)).apply()
         }
 
+    var reorderHintSeen: Boolean
+        get() = prefs.getBoolean(KEY_REORDER_HINT, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_REORDER_HINT, value).apply()
+        }
+
     private companion object {
         const val PREFS = "deepbrown"
         const val KEY_LIBRARY = "library_v1"
         const val KEY_VOLUME = "volume"
+        const val KEY_REORDER_HINT = "reorder_hint_seen"
     }
 }

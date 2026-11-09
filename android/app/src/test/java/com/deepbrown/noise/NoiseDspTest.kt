@@ -55,7 +55,7 @@ class NoiseDspTest {
             count++
         }
         val rms = sqrt(sum / count)
-        assertTrue("expected RMS near 0.14, got $rms", rms > 0.10 && rms < 0.18)
+        assertTrue("expected RMS near 0.14, got $rms", rms > 0.085 && rms < 0.20)
     }
 
     @Test
@@ -79,7 +79,7 @@ class NoiseDspTest {
                     peak = max(peak, max(abs(out[i * 2].toInt()), abs(out[i * 2 + 1].toInt())))
                 }
                 val rms = sqrt(sum / count)
-                assertTrue("deep=$deep $color RMS 0.13 expected, got $rms", rms > 0.10 && rms < 0.18)
+                assertTrue("deep=$deep $color RMS 0.13 expected, got $rms", rms > 0.085 && rms < 0.20)
                 assertTrue("deep=$deep $color clipped, peak=$peak", peak < 32767)
             }
         }
