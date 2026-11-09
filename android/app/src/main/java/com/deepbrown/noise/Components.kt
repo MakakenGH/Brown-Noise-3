@@ -682,7 +682,7 @@ fun SoundsHeader(
             }
             Spacer(Modifier.width(7.dp))
             Text(
-                text = "Add sound",
+                text = "Add sounds",
                 fontFamily = DmSans,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 11.5.sp,
