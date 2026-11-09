@@ -82,7 +82,7 @@ fun SoundSettingsSheet(
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     SheetTitle(sound.name)
-                    SheetSubtitle("${sound.color.label.lowercase()} noise")
+                    SheetSubtitle("${sound.color.label} Noise")
                 }
             }
             Spacer(Modifier.height(22.dp))

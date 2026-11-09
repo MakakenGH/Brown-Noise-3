@@ -467,7 +467,7 @@ fun ColorSelector(
                         onSelect(color)
                     }
                     .semantics {
-                        contentDescription = "${color.label} noise"
+                        contentDescription = "${color.label} Noise"
                         this.selected = active
                     },
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -637,6 +637,62 @@ fun SectionHeader(title: String, trailing: String? = null) {
 }
 
 @Composable
+fun SoundsHeader(
+    count: Int,
+    accent: Color,
+    onAdd: () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = "My sounds",
+            fontFamily = Fraunces,
+            fontSize = 20.sp,
+            lineHeight = 26.sp,
+            letterSpacing = (-0.2).sp,
+            color = OnSurface,
+        )
+        Spacer(Modifier.weight(1f))
+        if (count > 0) {
+            Text(
+                text = count.toString().padStart(2, '0'),
+                style = Numeric,
+                fontSize = 11.5.sp,
+                color = LabelMuted,
+            )
+            Spacer(Modifier.width(12.dp))
+        }
+        Row(
+            modifier = Modifier
+                .height(34.dp)
+                .clip(RoundedCornerShape(17.dp))
+                .background(SurfaceHigh)
+                .border(1.dp, Hairline, RoundedCornerShape(17.dp))
+                .noRippleClickable(onClick = onAdd)
+                .padding(start = 4.dp, end = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .size(26.dp)
+                    .clip(CircleShape)
+                    .background(accent),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, tint = Ink, modifier = Modifier.size(15.dp))
+            }
+            Spacer(Modifier.width(7.dp))
+            Text(
+                text = "Add sound",
+                fontFamily = DmSans,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 11.5.sp,
+                color = OnSurface,
+            )
+        }
+    }
+}
+
+@Composable
 fun SoundRow(
     sound: SavedSound,
     active: Boolean,
@@ -685,7 +741,7 @@ fun SoundRow(
                     Spacer(Modifier.width(6.dp))
                 }
                 Text(
-                    text = "${sound.color.label} noise",
+                    text = "${sound.color.label} Noise",
                     fontFamily = DmSans,
                     fontSize = 12.sp,
                     color = OnSurfaceVariant,
@@ -820,7 +876,7 @@ fun EmptySounds(onCreate: () -> Unit) {
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            text = "Start from Quick noise above, or create your own.",
+            text = "Pick a color above, or create your own.",
             fontFamily = DmSans,
             fontSize = 12.sp,
             lineHeight = 17.sp,
@@ -832,100 +888,39 @@ fun EmptySounds(onCreate: () -> Unit) {
 }
 
 @Composable
-fun BottomBar(
-    accent: Color,
-    onCollection: () -> Unit,
-    onCreate: () -> Unit,
-    onSettings: () -> Unit,
-) {
-    val activeDot by animateColorAsState(accent, tween(900, easing = FastOutSlowInEasing), label = "nav accent")
+fun BottomBar(onSettings: () -> Unit) {
     Box(
         Modifier
             .fillMaxWidth()
-            .background(Brush.verticalGradient(listOf(Color.Transparent, Bg, Bg))),
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Bg, Bg)))
+            .navigationBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 12.dp)
-                .height(76.dp),
+                .height(52.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(SurfaceHigh)
+                .border(1.dp, Hairline, RoundedCornerShape(18.dp))
+                .noRippleClickable(onClick = onSettings),
+            horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Column(
-                modifier = Modifier
-                    .widthIn(min = 88.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .clickable(onClick = onCollection)
-                    .padding(vertical = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                MusicNoteIcon(OnSurface, 20.dp)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Collection",
-                    fontFamily = DmSans,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 10.5.sp,
-                    color = OnSurface,
-                )
-                Spacer(Modifier.height(4.dp))
-                Box(Modifier.size(4.dp).clip(CircleShape).background(activeDot))
-            }
-            Row(
-                modifier = Modifier
-                    .height(44.dp)
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(SurfaceHigh)
-                    .border(1.dp, Hairline, RoundedCornerShape(22.dp))
-                    .clickable(onClick = onCreate)
-                    .padding(start = 6.dp, end = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    Modifier
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(activeDot),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null, tint = Ink, modifier = Modifier.size(17.dp))
-                }
-                Spacer(Modifier.width(9.dp))
-                Text(
-                    "New sound",
-                    fontFamily = DmSans,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 12.5.sp,
-                    color = OnSurface,
-                )
-            }
-            Column(
-                modifier = Modifier
-                    .widthIn(min = 88.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .clickable(onClick = onSettings)
-                    .padding(vertical = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Icon(
-                    Icons.Default.Settings,
-                    contentDescription = null,
-                    tint = OnSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Settings",
-                    fontFamily = DmSans,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 10.5.sp,
-                    color = OnSurfaceVariant,
-                )
-                Spacer(Modifier.height(4.dp))
-                Box(Modifier.size(4.dp))
-            }
+            Icon(
+                Icons.Default.Settings,
+                contentDescription = null,
+                tint = OnSurface,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "Playback settings",
+                fontFamily = DmSans,
+                fontWeight = FontWeight.Medium,
+                fontSize = 13.sp,
+                color = OnSurface,
+            )
         }
     }
 }

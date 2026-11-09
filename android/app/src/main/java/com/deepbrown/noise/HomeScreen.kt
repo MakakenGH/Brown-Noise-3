@@ -23,12 +23,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 
 @Composable
 fun HomeScreen(
@@ -51,7 +49,6 @@ fun HomeScreen(
     val quickColor = if (loaded && soundId == null) color else null
     val auraColor = if (loaded) color.dot else NeutralAura
     val scrollState = rememberScrollState()
-    val scopeCoroutine = rememberCoroutineScope()
 
     Box(Modifier.fillMaxSize().background(Bg)) {
         NoiseAura(
@@ -70,13 +67,14 @@ fun HomeScreen(
                     .padding(top = 10.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                SectionHeader("Quick noise")
+                SectionHeader("Colors of Noise")
                 ColorSelector(selected = quickColor, onSelect = onQuick)
 
                 Spacer(Modifier.height(12.dp))
-                SectionHeader(
-                    title = "Your sounds",
-                    trailing = if (sounds.isEmpty()) null else sounds.size.toString().padStart(2, '0'),
+                SoundsHeader(
+                    count = sounds.size,
+                    accent = if (loaded) color.dot else OnSurface,
+                    onAdd = onCreate,
                 )
 
                 if (sounds.isEmpty()) {
@@ -102,8 +100,8 @@ fun HomeScreen(
                 exit = fadeOut(tween(140)) + shrinkVertically(tween(220), shrinkTowards = Alignment.Bottom),
             ) {
                 NowPlayingCard(
-                    title = if (soundId == null) "Quick noise" else soundName,
-                    subtitle = "${color.label} noise",
+                    title = if (soundId == null) "Colors of Noise" else soundName,
+                    subtitle = "${color.label} Noise",
                     color = soundOrbColor(color.dot, deep),
                     playing = playing,
                     scope = scope,
@@ -113,12 +111,7 @@ fun HomeScreen(
                 )
             }
 
-            BottomBar(
-                accent = if (loaded) color.dot else OnSurface,
-                onCollection = { scopeCoroutine.launch { scrollState.animateScrollTo(0) } },
-                onCreate = onCreate,
-                onSettings = onSettings,
-            )
+            BottomBar(onSettings = onSettings)
         }
     }
 }

@@ -146,7 +146,7 @@ class MainActivity : ComponentActivity() {
         if (state.playing && state.soundId == null && state.params.color == color) {
             pausePlayback()
         } else {
-            startPlayback(quickParams(color, store.volume), "${color.label} noise", null)
+            startPlayback(quickParams(color, store.volume), "${color.label} Noise", null)
         }
     }
 

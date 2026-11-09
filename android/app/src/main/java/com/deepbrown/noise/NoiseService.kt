@@ -32,7 +32,7 @@ data class UiState(
     val playing: Boolean = false,
     val params: Params = Params(),
     val soundId: String? = null,
-    val soundName: String = "Brown noise",
+    val soundName: String = "Brown Noise",
     val loaded: Boolean = false,
     val timerEndWall: Long = 0L,
     val timerMin: Int = 0,
@@ -62,7 +62,7 @@ class NoiseService : Service() {
 
     private var params = Params()
     private var soundId: String? = null
-    private var soundName: String = "Brown noise"
+    private var soundName: String = "Brown Noise"
     private var loaded = false
     private var playing = false
     private var resumeOnFocusGain = false
@@ -436,7 +436,7 @@ class NoiseService : Service() {
         ).clamped()
         soundId = prefs.getString(KEY_SOUND_ID, null)
         soundName = prefs.getString(KEY_SOUND_NAME, null)
-            ?: "${params.color.label} noise"
+            ?: "${params.color.label} Noise"
         loaded = prefs.getBoolean(KEY_LOADED, false)
     }
 
@@ -502,7 +502,7 @@ class NoiseService : Service() {
     }
 
     private fun updateSession() {
-        val color = "${params.color.label} noise"
+        val color = "${params.color.label} Noise"
         session.setMetadata(
             MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_TITLE, soundName)
@@ -562,7 +562,7 @@ class NoiseService : Service() {
             .setSmallIcon(R.drawable.ic_stat_noise)
             .setContentTitle(soundName)
             .setContentText(
-                if (playing) "${params.color.label} noise · Playing" else "Paused",
+                if (playing) "${params.color.label} Noise · Playing" else "Paused",
             )
             .setContentIntent(contentIntent())
             .setOngoing(true)
