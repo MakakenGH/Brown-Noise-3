@@ -34,7 +34,7 @@ val DangerSurface = Color(0xFF2A0E1A)
 val WhiteNoise = Color(0xFFE9E6DE)
 val BrownNoise = Color(0xFFC68B63)
 val PinkNoise = Color(0xFFC99CDC)
-val GreenNoise = Color(0xFF9FBF96)
+val GreenNoise = Color(0xFF6FC15C)
 val NeutralAura = Color(0xFF5A4B8A)
 
 /** Saved sounds get a brighter or darker orb depending on their depth. */

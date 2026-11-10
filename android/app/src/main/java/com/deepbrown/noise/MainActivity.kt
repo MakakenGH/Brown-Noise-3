@@ -34,6 +34,15 @@ class MainActivity : ComponentActivity() {
     private val showReorderHint = mutableStateOf(false)
     private var bound = false
     private lateinit var store: SoundStore
+    private var editReturn: EditReturn? = null
+
+    private data class EditReturn(
+        val params: Params,
+        val name: String,
+        val id: String?,
+        val loaded: Boolean,
+        val playing: Boolean,
+    )
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -90,9 +99,10 @@ class MainActivity : ComponentActivity() {
                         onRenameSound = ::renameSound,
                         onVolume = ::setVolume,
                         onTimer = ::setTimer,
+                        onBeginEditing = ::beginEditing,
                         onPreviewStart = ::startPreview,
                         onPreviewStop = ::pausePlayback,
-                        onDiscardPreview = ::discardPreview,
+                        onDiscardEditing = ::discardEditing,
                         onPreviewParams = ::updatePreview,
                         scope = { service?.scope() },
                     )
@@ -174,8 +184,42 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun beginEditing(draft: Draft) {
+        val state = ui.value
+        editReturn = EditReturn(
+            params = state.params,
+            name = state.soundName,
+            id = state.soundId,
+            loaded = state.loaded,
+            playing = state.playing,
+        )
+        startPlayback(
+            draft.params(store.volume),
+            draft.name.ifBlank { "Custom sound" },
+            null,
+        )
+    }
+
+    private fun discardEditing() {
+        val previous = editReturn
+        editReturn = null
+        if (previous != null && previous.loaded) {
+            if (previous.playing) {
+                startPlayback(previous.params, previous.name, previous.id)
+            } else {
+                val s = service
+                if (s != null) {
+                    s.restorePaused(previous.params, previous.name, previous.id)
+                } else {
+                    discardPreview()
+                }
+            }
+        } else {
+            discardPreview()
+        }
+    }
+
     private fun discardPreview() {
-        if (ui.value.soundId != null) return
         val s = service
         if (s != null) {
             s.stop()
@@ -193,19 +237,18 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun updatePreview(draft: Draft) {
-        val name = draft.name.ifBlank { "Custom sound" }
-        if (ui.value.playing) {
-            service?.updateParams(draft.params(store.volume), name, null)
-        } else {
-            startPlayback(draft.params(store.volume), name, null)
-        }
+        service?.updateParams(
+            draft.params(store.volume),
+            draft.name.ifBlank { "Custom sound" },
+            null,
+        )
     }
 
     /* ------------------------------------------------------------------ */
     /* Collection                                                          */
     /* ------------------------------------------------------------------ */
 
-    private fun saveDraft(draft: Draft, editingId: String?, adoptPlayback: Boolean): SavedSound {
+    private fun saveDraft(draft: Draft, editingId: String?): SavedSound {
         val id = editingId ?: UUID.randomUUID().toString()
         val sound = SavedSound(
             id = id,
@@ -219,13 +262,8 @@ class MainActivity : ComponentActivity() {
         val index = sounds.indexOfFirst { it.id == id }
         if (index >= 0) sounds[index] = sound else sounds.add(0, sound)
         store.saveSounds(sounds.toList())
-
-        val state = ui.value
-        if (adoptPlayback) {
-            service?.updateParams(sound.params(store.volume), sound.name, sound.id)
-        } else if (state.soundId == sound.id) {
-            service?.updateParams(sound.params(store.volume), sound.name, sound.id)
-        }
+        editReturn = null
+        service?.updateParams(sound.params(store.volume), sound.name, sound.id)
         return sound
     }
 

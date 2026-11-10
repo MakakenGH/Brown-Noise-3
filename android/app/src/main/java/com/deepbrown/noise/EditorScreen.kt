@@ -236,14 +236,20 @@ fun EditorScreen(
                 modifier = Modifier
                     .size(48.dp)
                     .graphicsLayer {
-                        val s = 1f + audioLevel.value * 0.05f
+                        val s = 1f + audioLevel.value * 0.12f
                         scaleX = s
                         scaleY = s
                     }
                     .drawBehind {
+                        val lv = audioLevel.value
                         drawCircle(
-                            color = accent.copy(alpha = 0.08f + audioLevel.value * 0.24f),
-                            radius = size.minDimension * 0.48f,
+                            color = accent.copy(alpha = 0.10f + lv * 0.38f),
+                            radius = size.minDimension * (0.42f + lv * 0.15f),
+                        )
+                        drawCircle(
+                            color = accent.copy(alpha = 0.16f + lv * 0.38f),
+                            radius = size.minDimension * 0.40f,
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(1.2.dp.toPx()),
                         )
                     },
                 contentAlignment = Alignment.Center,
@@ -280,15 +286,6 @@ fun EditorScreen(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            LiveWaveform(
-                color = accent,
-                playing = previewing,
-                scope = scope,
-                modifier = Modifier
-                    .width(42.dp)
-                    .height(18.dp)
-                    .padding(end = 10.dp),
-            )
             Box(
                 modifier = Modifier
                     .size(48.dp)

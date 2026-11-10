@@ -153,7 +153,7 @@ fun HomeScreen(
                             sound = sound,
                             active = loaded && sound.id == soundId,
                             playing = playing,
-                            highlight = sound.id == highlightId,
+                            savedRecently = sound.id == highlightId,
                             onPlay = { onPlaySound(sound) },
                             onMenu = { onSoundMenu(sound) },
                             onMoveUp = if (index > 0) {

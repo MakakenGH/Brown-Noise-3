@@ -5,7 +5,12 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -58,8 +63,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -76,7 +79,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.node.DelegatableNode
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
@@ -310,7 +312,8 @@ fun rememberAudioLevel(scope: () -> FloatArray?, playing: Boolean): androidx.com
                 for (v in data) sum += v.toDouble() * v
                 val rms = sqrt(sum / data.size)
                 val target = (rms * 4.0).toFloat().coerceIn(0f, 1f)
-                level.floatValue = level.floatValue * 0.80f + target * 0.20f
+                val coefficient = if (target > level.floatValue) 0.45f else 0.10f
+                level.floatValue += (target - level.floatValue) * coefficient
             }
         }
     }
@@ -435,7 +438,6 @@ fun NameField(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     placeholder: String = "Name",
-    autoFocus: Boolean = false,
     selectAll: Boolean = false,
     onSubmit: (() -> Unit)? = null,
 ) {
@@ -447,18 +449,10 @@ fun NameField(
             ),
         )
     }
-    val focusRequester = remember { FocusRequester() }
-    val keyboard = LocalSoftwareKeyboardController.current
 
     LaunchedEffect(value) {
         if (field.text != value) {
             field = field.copy(text = value, selection = TextRange(value.length))
-        }
-    }
-    LaunchedEffect(autoFocus) {
-        if (autoFocus) {
-            focusRequester.requestFocus()
-            keyboard?.show()
         }
     }
 
@@ -488,9 +482,7 @@ fun NameField(
             cursorBrush = SolidColor(OnSurface),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { onSubmit?.invoke() }),
-            modifier = Modifier
-                .fillMaxWidth()
-                .focusRequester(focusRequester),
+            modifier = Modifier.fillMaxWidth(),
             decorationBox = { inner ->
                 if (field.text.isEmpty()) {
                     Text(placeholder, fontFamily = DmSans, fontSize = 14.sp, color = LabelMuted)
@@ -784,7 +776,7 @@ fun SoundRow(
     sound: SavedSound,
     active: Boolean,
     playing: Boolean,
-    highlight: Boolean,
+    savedRecently: Boolean,
     onPlay: () -> Unit,
     onMenu: () -> Unit,
     onMoveUp: (() -> Unit)? = null,
@@ -794,12 +786,8 @@ fun SoundRow(
     val orbColor = soundOrbColor(sound.color.dot, sound.deep)
     val dot by animateFloatAsState(if (playing && active) 1f else 0.45f, tween(400), label = "status")
     val border by animateColorAsState(
-        when {
-            highlight -> orbColor.copy(alpha = 0.95f)
-            active -> orbColor.copy(alpha = 0.55f)
-            else -> Hairline
-        },
-        tween(if (highlight) 260 else 450, easing = FastOutSlowInEasing),
+        if (active) orbColor.copy(alpha = 0.55f) else Hairline,
+        tween(450, easing = FastOutSlowInEasing),
         label = "row border",
     )
     val moveActions = buildList {
@@ -814,11 +802,6 @@ fun SoundRow(
         modifier = modifier
             .fillMaxWidth()
             .height(72.dp)
-            .shadow(
-                elevation = if (highlight) 12.dp else 0.dp,
-                shape = RoundedCornerShape(24.dp),
-                clip = false,
-            )
             .clip(RoundedCornerShape(24.dp))
             .background(Surface)
             .border(1.dp, border, RoundedCornerShape(24.dp))
@@ -857,6 +840,36 @@ fun SoundRow(
                     fontSize = 12.sp,
                     color = OnSurfaceVariant,
                 )
+                AnimatedVisibility(
+                    visible = savedRecently,
+                    enter = fadeIn(tween(180)) + expandHorizontally(tween(220)),
+                    exit = fadeOut(tween(380)) + shrinkHorizontally(tween(380)),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .padding(start = 8.dp)
+                            .height(18.dp)
+                            .clip(RoundedCornerShape(9.dp))
+                            .background(orbColor.copy(alpha = 0.14f))
+                            .padding(horizontal = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = null,
+                            tint = orbColor,
+                            modifier = Modifier.size(10.dp),
+                        )
+                        Spacer(Modifier.width(3.dp))
+                        Text(
+                            text = "Saved",
+                            fontFamily = DmSans,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 9.5.sp,
+                            color = OnSurfaceVariant,
+                        )
+                    }
+                }
             }
         }
         Box(
@@ -922,14 +935,20 @@ fun NowPlayingCard(
             modifier = Modifier
                 .size(52.dp)
                 .graphicsLayer {
-                    val s = 1f + level.value * 0.05f
+                    val s = 1f + level.value * 0.16f
                     scaleX = s
                     scaleY = s
                 }
                 .drawBehind {
+                    val lv = level.value
                     drawCircle(
-                        color = accent.copy(alpha = 0.08f + level.value * 0.26f),
-                        radius = size.minDimension * 0.48f,
+                        color = accent.copy(alpha = 0.10f + lv * 0.40f),
+                        radius = size.minDimension * (0.42f + lv * 0.15f),
+                    )
+                    drawCircle(
+                        color = accent.copy(alpha = 0.16f + lv * 0.40f),
+                        radius = size.minDimension * 0.40f,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(1.2.dp.toPx()),
                     )
                 },
             contentAlignment = Alignment.Center,
@@ -978,15 +997,6 @@ fun NowPlayingCard(
                 }
             }
         }
-        LiveWaveform(
-            color = accent,
-            playing = playing,
-            scope = scope,
-            modifier = Modifier
-                .width(46.dp)
-                .height(20.dp)
-                .padding(end = 10.dp),
-        )
         Box(
             modifier = Modifier
                 .size(44.dp)

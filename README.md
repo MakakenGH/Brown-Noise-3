@@ -16,7 +16,8 @@ be shaped while they play.
   you play or pause it. Tap its body to open the sound in the editor.
 * Volume and a sleep timer (15 min, 30 min, 1 h, 2 h) live in Playback settings;
   the remaining time appears in the now-playing card while a timer is running.
-* The Noise Generator editor previews changes live while it plays.
+* Opening the sound editor starts its draft immediately and applies every change
+  live. Leaving without saving restores the sound that was loaded before.
 * Playback runs in a foreground media service, so it keeps going when the app is
   minimized, the screen is off, or the activity is gone. Lock-screen and headset
   controls work, including over Bluetooth.

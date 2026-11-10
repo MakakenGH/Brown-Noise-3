@@ -351,6 +351,22 @@ class NoiseService : Service() {
         publish()
     }
 
+    /** Restores a previously loaded sound without starting playback. */
+    fun restorePaused(newParams: Params, name: String, id: String?) {
+        if (playing) {
+            pauseInternal(abandonFocus = true, clearSleepTimer = false)
+        }
+        params = newParams.clamped()
+        soundName = name
+        soundId = id
+        loaded = true
+        engine.setParams(params)
+        persist()
+        updateSession()
+        updateNotification()
+        publish()
+    }
+
     fun setTimer(minutes: Int) {
         handler.removeCallbacks(timerRunnable)
         if (minutes <= 0) {

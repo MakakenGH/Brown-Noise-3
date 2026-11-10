@@ -17,7 +17,7 @@ import kotlinx.coroutines.delay
 
 private sealed interface Screen {
     data object Home : Screen
-    data class Editor(val sound: SavedSound?, val seed: Draft? = null) : Screen
+    data class Editor(val sound: SavedSound?, val initial: Draft) : Screen
 }
 
 private sealed interface HomeSheet {
@@ -33,7 +33,7 @@ fun ColorsOfNoiseApp(
     onQuick: (NoiseColor) -> Unit,
     onPlaySound: (SavedSound) -> Unit,
     onToggleNowPlaying: () -> Unit,
-    onSaveDraft: (Draft, String?, Boolean) -> SavedSound,
+    onSaveDraft: (Draft, String?) -> SavedSound,
     onDeleteSound: (SavedSound) -> Unit,
     onMoveSound: (Int, Int) -> Unit,
     onReorderFinished: () -> Unit,
@@ -42,16 +42,16 @@ fun ColorsOfNoiseApp(
     onRenameSound: (SavedSound, String) -> Unit,
     onVolume: (Float) -> Unit,
     onTimer: (Int) -> Unit,
+    onBeginEditing: (Draft) -> Unit,
     onPreviewStart: (Draft) -> Unit,
     onPreviewStop: () -> Unit,
-    onDiscardPreview: () -> Unit,
+    onDiscardEditing: () -> Unit,
     onPreviewParams: (Draft) -> Unit,
     scope: () -> FloatArray?,
 ) {
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
     var sheet by remember { mutableStateOf<HomeSheet?>(null) }
     var previewActive by remember { mutableStateOf(false) }
-    var previewTouched by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<SavedSound?>(null) }
     var justSavedId by remember { mutableStateOf<String?>(null) }
 
@@ -62,14 +62,20 @@ fun ColorsOfNoiseApp(
         }
     }
 
-    LaunchedEffect(ui.playing) {
-        if (!ui.playing) previewActive = false
+    LaunchedEffect(previewActive, ui.playing) {
+        if (previewActive && !ui.playing) {
+            delay(1_200)
+            if (!ui.playing) previewActive = false
+        }
     }
 
     fun openEditor(sound: SavedSound?, seed: Draft? = null) {
-        previewActive = false
-        previewTouched = false
-        screen = Screen.Editor(sound, seed)
+        val initial = sound?.let { Draft.from(it) }
+            ?: seed
+            ?: Draft(color = if (ui.loaded) ui.params.color else NoiseColor.WHITE)
+        onBeginEditing(initial)
+        previewActive = true
+        screen = Screen.Editor(sound, initial)
     }
 
     fun openNowPlaying() {
@@ -92,9 +98,8 @@ fun ColorsOfNoiseApp(
     }
 
     fun leaveEditor() {
-        if (previewTouched) onDiscardPreview()
+        onDiscardEditing()
         previewActive = false
-        previewTouched = false
         screen = Screen.Home
     }
 
@@ -139,21 +144,16 @@ fun ColorsOfNoiseApp(
         }
         is Screen.Editor -> {
             EditorScreen(
-                initial = current.sound?.let { Draft.from(it) }
-                    ?: current.seed
-                    ?: Draft(color = if (ui.loaded) ui.params.color else NoiseColor.WHITE),
+                initial = current.initial,
                 editing = current.sound != null,
                 previewing = previewActive,
                 scope = scope,
-                onDraftChanged = { draft ->
-                    if (previewActive) onPreviewParams(draft)
-                },
+                onDraftChanged = { draft -> onPreviewParams(draft) },
                 onBack = { leaveEditor() },
                 onSave = { draft ->
-                    val saved = onSaveDraft(draft, current.sound?.id, previewTouched)
+                    val saved = onSaveDraft(draft, current.sound?.id)
                     justSavedId = saved.id
                     previewActive = false
-                    previewTouched = false
                     screen = Screen.Home
                 },
                 onTogglePreview = { draft ->
@@ -163,7 +163,6 @@ fun ColorsOfNoiseApp(
                     } else {
                         onPreviewStart(draft)
                         previewActive = true
-                        previewTouched = true
                     }
                 },
             )
