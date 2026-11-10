@@ -63,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -449,6 +450,7 @@ fun NameField(
             ),
         )
     }
+    var hasFocused by remember { mutableStateOf(false) }
 
     LaunchedEffect(value) {
         if (field.text != value) {
@@ -482,7 +484,16 @@ fun NameField(
             cursorBrush = SolidColor(OnSurface),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { onSubmit?.invoke() }),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { state ->
+                    if (state.isFocused && !hasFocused) {
+                        hasFocused = true
+                        if (selectAll) {
+                            field = field.copy(selection = TextRange(0, field.text.length))
+                        }
+                    }
+                },
             decorationBox = { inner ->
                 if (field.text.isEmpty()) {
                     Text(placeholder, fontFamily = DmSans, fontSize = 14.sp, color = LabelMuted)
