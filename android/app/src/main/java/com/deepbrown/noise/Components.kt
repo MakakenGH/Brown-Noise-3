@@ -857,7 +857,7 @@ fun SoundRow(
                         Icon(
                             Icons.Default.Check,
                             contentDescription = null,
-                            tint = orbColor,
+                            tint = OnSurface,
                             modifier = Modifier.size(10.dp),
                         )
                         Spacer(Modifier.width(3.dp))
