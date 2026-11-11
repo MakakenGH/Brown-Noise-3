@@ -33,7 +33,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -241,7 +243,26 @@ fun PlaybackSettingsSheet(
                                             onTimer(minutes)
                                         }
                                         .clip(RoundedCornerShape(12.dp))
-                                        .background(if (selected) OnSurface else SurfaceHigh),
+                                        .background(
+                                            if (selected) {
+                                                Brush.verticalGradient(
+                                                    listOf(lerp(OnSurface, Color.White, 0.12f), OnSurface),
+                                                )
+                                            } else {
+                                                Brush.verticalGradient(
+                                                    listOf(lerp(SurfaceHigh, Color.White, 0.05f), SurfaceHigh),
+                                                )
+                                            },
+                                        )
+                                        .border(
+                                            1.dp,
+                                            if (selected) {
+                                                Color.White.copy(alpha = 0.14f)
+                                            } else {
+                                                Hairline.copy(alpha = 0.6f)
+                                            },
+                                            RoundedCornerShape(12.dp),
+                                        ),
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Text(

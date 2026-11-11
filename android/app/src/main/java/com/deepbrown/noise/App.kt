@@ -60,7 +60,7 @@ fun ColorsOfNoiseApp(
 
     LaunchedEffect(savedId) {
         if (savedId != null) {
-            delay(1_200)
+            delay(1_800)
             savedId = null
         }
     }

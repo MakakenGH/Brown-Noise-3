@@ -102,6 +102,7 @@ fun HomeScreen(
         remaining >= 60_000L -> "${ceil(remaining / 60_000.0).roundToInt()} min"
         else -> "${(remaining / 1_000L).coerceAtLeast(1L)}s"
     }
+    val timerLabel = timerText
 
     Box(Modifier.fillMaxSize().background(Bg)) {
         NoiseAura(
@@ -246,14 +247,24 @@ fun HomeScreen(
                 enter = fadeIn(tween(220)) + expandVertically(tween(280), expandFrom = Alignment.Bottom),
                 exit = fadeOut(tween(140)) + shrinkVertically(tween(220), shrinkTowards = Alignment.Bottom),
             ) {
-                NowPlayingCard(
+                PlayerCard(
                     title = if (soundId == null) "Colors of Noise" else soundName,
                     subtitle = "${color.label} Noise",
-                    color = soundOrbColor(color.dot, deep),
+                    accent = color.dot,
+                    orbColor = soundOrbColor(color.dot, deep),
                     playing = playing,
                     scope = scope,
-                    timerText = timerText,
-                    onTimerClick = onSettings,
+                    statusChip = if (timerLabel != null) {
+                        {
+                            PlayerChip(
+                                text = timerLabel,
+                                leading = { TimerGlyph(OnSurfaceVariant, 10.dp) },
+                                onClick = onSettings,
+                            )
+                        }
+                    } else {
+                        null
+                    },
                     onOpen = onOpenNowPlaying,
                     onToggle = onToggleNowPlaying,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),

@@ -1,17 +1,10 @@
 package com.deepbrown.noise
 
-import android.animation.ValueAnimator
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
@@ -55,6 +48,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -75,14 +69,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.node.DelegatableNode
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -247,66 +240,12 @@ fun NoiseAura(color: Color, modifier: Modifier = Modifier) {
     }
 }
 
-/** The live scope buffer, drawn as a thin line. Frozen while paused. */
 @Composable
-fun LiveWaveform(
-    color: Color,
-    playing: Boolean,
-    scope: () -> FloatArray?,
-    modifier: Modifier = Modifier,
-    points: Int = 56,
-) {
-    val wave = remember(points) { mutableStateOf(idleWave(points)) }
-    val peak = remember { mutableFloatStateOf(0.02f) }
-    val currentScope by rememberUpdatedState(scope)
-    LaunchedEffect(playing) {
-        if (!playing) return@LaunchedEffect
-        var last = 0L
-        while (isActive) {
-            withFrameNanos { now ->
-                if (now - last < 33_000_000L) return@withFrameNanos
-                last = now
-                val live = currentScope() ?: return@withFrameNanos
-                val previous = wave.value
-                if (live.size < previous.size) return@withFrameNanos
-                var mx = 0f
-                for (v in live) mx = max(mx, abs(v))
-                peak.floatValue = max(peak.floatValue * 0.994f, max(mx, 0.02f))
-                val next = FloatArray(previous.size)
-                for (i in previous.indices) {
-                    next[i] = previous[i] + 0.55f * (live[i] / peak.floatValue - previous[i])
-                }
-                wave.value = next
-            }
-        }
-    }
-    Canvas(modifier) {
-        val values = wave.value
-        val mid = size.height / 2f
-        val amp = size.height * 0.34f
-        val dx = size.width / (values.size - 1)
-        val path = Path()
-        path.moveTo(0f, mid + values[0] * amp)
-        for (i in 1 until values.size) {
-            path.lineTo(i * dx, mid + values[i] * amp)
-        }
-        drawPath(
-            path = path,
-            color = color.copy(alpha = if (playing) 0.85f else 0.40f),
-            style = Stroke(width = 1.4.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round),
-        )
-    }
-}
-
-@Composable
-fun rememberAudioLevel(scope: () -> FloatArray?, playing: Boolean): androidx.compose.runtime.State<Float> {
+fun rememberAudioLevel(scope: () -> FloatArray?, playing: Boolean): State<Float> {
     val level = remember { mutableFloatStateOf(0f) }
     val currentScope by rememberUpdatedState(scope)
     LaunchedEffect(playing) {
-        if (!playing) {
-            level.floatValue = 0f
-            return@LaunchedEffect
-        }
+        if (!playing) return@LaunchedEffect
         var last = 0L
         while (isActive) {
             withFrameNanos { now ->
@@ -327,6 +266,48 @@ fun rememberAudioLevel(scope: () -> FloatArray?, playing: Boolean): androidx.com
 private fun idleWave(points: Int): FloatArray = FloatArray(points) { i ->
     val x = i.toFloat() / points
     (0.22 * sin(x * 6.28318 * 2.2) + 0.10 * sin(x * 6.28318 * 5.1)).toFloat()
+}
+
+/**
+ * A heavily smoothed, low-resolution copy of the scope for the soft editor waveform.
+ * It moves at 20 fps with a slow attack, so it undulates instead of twitching.
+ */
+@Composable
+fun rememberCalmWave(
+    scope: () -> FloatArray?,
+    playing: Boolean,
+    points: Int = 22,
+): State<FloatArray> {
+    val wave = remember(points) { mutableStateOf(idleWave(points)) }
+    val peak = remember { mutableFloatStateOf(0.02f) }
+    val currentScope by rememberUpdatedState(scope)
+    LaunchedEffect(playing) {
+        if (!playing) return@LaunchedEffect
+        var last = 0L
+        while (isActive) {
+            withFrameNanos { now ->
+                if (now - last < 50_000_000L) return@withFrameNanos
+                last = now
+                val live = currentScope() ?: return@withFrameNanos
+                if (live.isEmpty()) return@withFrameNanos
+                var mx = 0f
+                val next = FloatArray(points) { i ->
+                    val index = (i.toFloat() / (points - 1) * (live.size - 1))
+                        .roundToInt()
+                        .coerceIn(0, live.size - 1)
+                    val value = live[index]
+                    if (abs(value) > mx) mx = abs(value)
+                    value
+                }
+                peak.floatValue = max(peak.floatValue * 0.996f, max(mx, 0.02f))
+                val previous = wave.value
+                wave.value = FloatArray(points) { i ->
+                    previous[i] + 0.10f * (next[i] / peak.floatValue - previous[i])
+                }
+            }
+        }
+    }
+    return wave
 }
 
 /* ---------------------------------------------------------------------- */
@@ -357,10 +338,52 @@ fun ColorOrb(
             Modifier
                 .size(size)
                 .clip(CircleShape)
-                .background(
+                .drawBehind {
+                    val w = this.size.width
+                    val h = this.size.height
+                    // A lit sphere: a soft top-left light, a small specular glint,
+                    // and a quiet shadow at the lower-right edge.
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            0f to lerp(color, Color.White, 0.56f),
+                            0.34f to lerp(color, Color.White, 0.12f),
+                            0.72f to color,
+                            1f to lerp(color, Color.Black, 0.24f),
+                            center = Offset(w * 0.30f, h * 0.24f),
+                            radius = w * 0.98f,
+                        ),
+                    )
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            0f to Color.White.copy(alpha = 0.34f),
+                            0.55f to Color.White.copy(alpha = 0.08f),
+                            1f to Color.Transparent,
+                            center = Offset(w * 0.28f, h * 0.22f),
+                            radius = w * 0.24f,
+                        ),
+                        radius = w * 0.24f,
+                        center = Offset(w * 0.28f, h * 0.22f),
+                    )
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            0f to Color.Transparent,
+                            0.62f to Color.Transparent,
+                            1f to Color.Black.copy(alpha = 0.20f),
+                            center = Offset(w * 0.72f, h * 0.78f),
+                            radius = w * 0.78f,
+                        ),
+                    )
+                }
+                .border(
+                    1.dp,
                     Brush.linearGradient(
-                        listOf(lerp(color, Color.White, 0.42f), color),
+                        listOf(
+                            Color.White.copy(alpha = 0.28f),
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.10f),
+                        ),
                     ),
+                    CircleShape,
                 ),
         )
     }
@@ -426,7 +449,12 @@ fun PrimaryButton(
             .height(54.dp)
             .pressable(scale = 0.98f, enabled = enabled, onClick = onClick)
             .clip(RoundedCornerShape(18.dp))
-            .background(background),
+            .background(
+                Brush.verticalGradient(
+                    listOf(lerp(background, Color.White, 0.10f), background),
+                ),
+            )
+            .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(18.dp)),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -543,8 +571,26 @@ fun ColorSelector(
             .fillMaxWidth()
             .height(112.dp)
             .clip(RoundedCornerShape(28.dp))
-            .background(Surface)
-            .border(1.dp, Hairline, RoundedCornerShape(28.dp))
+            .background(
+                Brush.verticalGradient(
+                    listOf(Surface.copy(alpha = 0.78f), Surface.copy(alpha = 0.62f)),
+                ),
+            )
+            .drawBehind {
+                drawLine(
+                    brush = Brush.horizontalGradient(
+                        listOf(
+                            Color.Transparent,
+                            Color.White.copy(alpha = 0.08f),
+                            Color.Transparent,
+                        ),
+                    ),
+                    start = Offset(24.dp.toPx(), 1.dp.toPx()),
+                    end = Offset(size.width - 24.dp.toPx(), 1.dp.toPx()),
+                    strokeWidth = 1.dp.toPx(),
+                )
+            }
+            .border(1.dp, OnSurface.copy(alpha = 0.07f), RoundedCornerShape(28.dp))
             .padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -646,8 +692,8 @@ fun SliderTrack(
             val w = size.width
             val h = size.height
             val cy = h / 2f
-            val thumbX = value * w
-            val lineH = 3.dp.toPx()
+            val thumbCenter = (value * w).coerceIn(3.dp.toPx(), w - 3.dp.toPx())
+            val lineH = 4.dp.toPx()
 
             // Fixed dot grid; the filled part simply covers the dots it passes.
             val dot = 1.3.dp.toPx()
@@ -659,17 +705,36 @@ fun SliderTrack(
             }
 
             drawRoundRect(
-                color = accent,
+                brush = Brush.verticalGradient(
+                    colors = listOf(lerp(accent, Color.White, 0.22f), accent),
+                    startY = cy - lineH / 2f,
+                    endY = cy + lineH / 2f,
+                ),
                 topLeft = Offset(0f, cy - lineH / 2f),
-                size = Size((thumbX - lineH / 2f).coerceAtLeast(0f), lineH),
+                size = Size((thumbCenter - lineH / 2f).coerceAtLeast(0f), lineH),
                 cornerRadius = CornerRadius(lineH / 2f),
             )
 
             drawRoundRect(
-                color = OnSurface,
-                topLeft = Offset(thumbX - 1.75.dp.toPx(), cy - 9.dp.toPx()),
-                size = Size(3.5.dp.toPx(), 18.dp.toPx()),
-                cornerRadius = CornerRadius(1.75.dp.toPx()),
+                color = Color.Black.copy(alpha = 0.35f),
+                topLeft = Offset(thumbCenter - 4.dp.toPx(), cy - 11.dp.toPx()),
+                size = Size(8.dp.toPx(), 22.dp.toPx()),
+                cornerRadius = CornerRadius(4.dp.toPx()),
+            )
+            drawRoundRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color(0xFFFFF8EE), Color(0xFFD8D0C2), Color(0xFF9A9183)),
+                    startY = cy - 10.dp.toPx(),
+                    endY = cy + 10.dp.toPx(),
+                ),
+                topLeft = Offset(thumbCenter - 3.dp.toPx(), cy - 10.dp.toPx()),
+                size = Size(6.dp.toPx(), 20.dp.toPx()),
+                cornerRadius = CornerRadius(3.dp.toPx()),
+            )
+            drawCircle(
+                color = Color.White.copy(alpha = 0.55f),
+                radius = 1.dp.toPx(),
+                center = Offset(thumbCenter, cy - 6.dp.toPx()),
             )
         }
     }
@@ -701,7 +766,12 @@ fun ParameterRow(
                 color = OnSurfaceVariant,
                 modifier = Modifier
                     .clip(RoundedCornerShape(7.dp))
-                    .background(OnSurface.copy(alpha = 0.06f))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(OnSurface.copy(alpha = 0.10f), OnSurface.copy(alpha = 0.05f)),
+                        ),
+                    )
+                    .border(1.dp, OnSurface.copy(alpha = 0.06f), RoundedCornerShape(7.dp))
                     .padding(horizontal = 8.dp, vertical = 3.dp),
             )
         }
@@ -791,7 +861,7 @@ fun SoundRow(
     val orbColor = soundOrbColor(sound.color.dot, sound.deep)
     val dot by animateFloatAsState(if (playing && active) 1f else 0.45f, tween(400), label = "status")
     val border by animateColorAsState(
-        if (active) orbColor.copy(alpha = 0.55f) else Hairline,
+        if (active) orbColor.copy(alpha = 0.34f) else orbColor.copy(alpha = 0.16f),
         tween(450, easing = FastOutSlowInEasing),
         label = "row border",
     )
@@ -808,7 +878,29 @@ fun SoundRow(
             .fillMaxWidth()
             .height(72.dp)
             .clip(RoundedCornerShape(24.dp))
-            .background(Surface)
+            .background(
+                Brush.horizontalGradient(
+                    listOf(
+                        orbColor.copy(alpha = if (active) 0.20f else 0.13f),
+                        Surface.copy(alpha = 0.72f),
+                        Surface.copy(alpha = 0.62f),
+                    ),
+                ),
+            )
+            .drawBehind {
+                drawLine(
+                    brush = Brush.horizontalGradient(
+                        listOf(
+                            Color.Transparent,
+                            Color.White.copy(alpha = 0.07f),
+                            Color.Transparent,
+                        ),
+                    ),
+                    start = Offset(20.dp.toPx(), 1.dp.toPx()),
+                    end = Offset(size.width - 20.dp.toPx(), 1.dp.toPx()),
+                    strokeWidth = 1.dp.toPx(),
+                )
+            }
             .border(1.dp, border, RoundedCornerShape(24.dp))
             .noRippleClickable(onClick = onPlay)
             .semantics {
@@ -850,33 +942,20 @@ fun SoundRow(
         AnimatedVisibility(
             visible = justSaved,
             enter = fadeIn(tween(160)) + expandHorizontally(tween(240), expandFrom = Alignment.End),
-            exit = fadeOut(tween(240)) + shrinkHorizontally(tween(260), shrinkTowards = Alignment.End),
+            exit = fadeOut(tween(380)) + shrinkHorizontally(tween(420), shrinkTowards = Alignment.End),
         ) {
-            Row(
-                modifier = Modifier
-                    .padding(start = 8.dp, end = 2.dp)
-                    .height(24.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(orbColor.copy(alpha = 0.16f))
-                    .border(1.dp, orbColor.copy(alpha = 0.42f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    Icons.Default.Check,
-                    contentDescription = null,
-                    tint = orbColor,
-                    modifier = Modifier.size(12.dp),
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    text = "Saved",
-                    fontFamily = DmSans,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 10.5.sp,
-                    color = OnSurface,
-                )
-            }
+            PlayerChip(
+                text = "Saved",
+                leading = {
+                    Icon(
+                        Icons.Default.Check,
+                        contentDescription = null,
+                        tint = OnSurfaceVariant,
+                        modifier = Modifier.size(10.dp),
+                    )
+                },
+                modifier = Modifier.padding(start = 8.dp, end = 2.dp),
+            )
         }
         Box(
             modifier = Modifier
@@ -896,159 +975,253 @@ fun SoundRow(
 }
 
 @Composable
-fun NowPlayingCard(
+fun PlayerChip(
+    text: String,
+    leading: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+) {
+    val click = if (onClick != null) Modifier.noRippleClickable(onClick = onClick) else Modifier
+    Row(
+        modifier = modifier
+            .height(20.dp)
+            .clip(RoundedCornerShape(7.dp))
+            .background(
+                Brush.verticalGradient(
+                    listOf(OnSurface.copy(alpha = 0.10f), OnSurface.copy(alpha = 0.05f)),
+                ),
+            )
+            .border(1.dp, OnSurface.copy(alpha = 0.06f), RoundedCornerShape(7.dp))
+            .then(click)
+            .padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        leading()
+        Spacer(Modifier.width(3.dp))
+        Text(
+            text = text,
+            style = Numeric,
+            fontSize = 10.sp,
+            color = OnSurfaceVariant,
+            maxLines = 1,
+        )
+    }
+}
+
+/**
+ * The one player card used above the home bottom bar and in the editor.
+ * Its aura drifts slowly while playing; the orb stays still as the anchor.
+ */
+@Composable
+fun PlayerCard(
     title: String,
     subtitle: String,
-    color: Color,
+    accent: Color,
+    orbColor: Color,
     playing: Boolean,
     scope: () -> FloatArray?,
-    timerText: String?,
-    onTimerClick: () -> Unit,
     onOpen: () -> Unit,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
+    statusChip: (@Composable () -> Unit)? = null,
+    playDescription: String = "Play",
+    pauseDescription: String = "Pause",
 ) {
-    val accent by animateColorAsState(
-        targetValue = color,
+    val cardAccent by animateColorAsState(
+        targetValue = accent,
         animationSpec = tween(1_200, easing = FastOutSlowInEasing),
-        label = "now playing colour",
+        label = "player accent",
+    )
+    val orbTint by animateColorAsState(
+        targetValue = orbColor,
+        animationSpec = tween(1_200, easing = FastOutSlowInEasing),
+        label = "player orb",
     )
     val level = rememberAudioLevel(scope, playing)
-    val pulse = if (playing) {
-        rememberInfiniteTransition(label = "now playing").animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(2_400, easing = LinearEasing),
-                repeatMode = RepeatMode.Restart,
-            ),
-            label = "orb pulse",
-        )
-    } else {
-        null
+    val pauseFade by animateFloatAsState(
+        targetValue = if (playing) 1f else 0f,
+        animationSpec = tween(900),
+        label = "card energy",
+    )
+    val phase = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(playing) {
+        if (!playing) return@LaunchedEffect
+        val startPhase = phase.floatValue
+        val start = withFrameNanos { it }
+        var last = 0L
+        while (isActive) {
+            withFrameNanos { now ->
+                if (now - last < 50_000_000L) return@withFrameNanos
+                last = now
+                phase.floatValue = (startPhase + (now - start) / 14_000_000_000f) % 1f
+            }
+        }
     }
-    Row(
+    val shape = RoundedCornerShape(24.dp)
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .height(80.dp)
             .pressable(scale = 0.995f, onClick = onOpen)
             .shadow(
                 elevation = 20.dp,
-                shape = RoundedCornerShape(24.dp),
+                shape = shape,
                 clip = false,
                 ambientColor = Color.Black,
                 spotColor = Color.Black,
             )
-            .clip(RoundedCornerShape(24.dp))
+            .clip(shape)
             .background(SurfaceHigh)
-            .background(
-                Brush.horizontalGradient(
-                    listOf(accent.copy(alpha = 0.16f), SurfaceHigh, SurfaceHigh),
-                ),
-            )
-            .border(1.dp, accent.copy(alpha = 0.26f), RoundedCornerShape(24.dp))
-            .padding(start = 16.dp, end = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(64.dp)
-                .graphicsLayer {
-                    val s = 1f + level.value * 0.14f + (pulse?.value ?: 0f) * 0.02f
-                    scaleX = s
-                    scaleY = s
-                }
-                .drawBehind {
-                    val min = size.minDimension
-                    val energy = level.value.coerceIn(0f, 1f)
-                    val pulseValue = pulse?.value ?: 0f
-                    val glowRadius = min * (0.58f + energy * 0.18f)
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                accent.copy(alpha = 0.34f + energy * 0.40f),
-                                accent.copy(alpha = 0.12f + energy * 0.20f),
-                                Color.Transparent,
-                            ),
-                            center = center,
-                            radius = glowRadius,
-                        ),
-                        radius = glowRadius,
-                    )
-                    if (playing) {
-                        drawCircle(
-                            color = accent.copy(alpha = (1f - pulseValue) * 0.70f),
-                            radius = min * (0.40f + pulseValue * 0.10f),
-                            style = Stroke(width = 1.6.dp.toPx()),
-                        )
-                        val trailing = (pulseValue + 0.5f) % 1f
-                        drawCircle(
-                            color = accent.copy(alpha = (1f - trailing) * 0.48f),
-                            radius = min * (0.40f + trailing * 0.10f),
-                            style = Stroke(width = 1.2.dp.toPx()),
-                        )
-                    }
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            ColorOrb(accent, 36.dp, ring = true, ringAlpha = 0.55f + level.value * 0.45f)
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = title,
-                fontFamily = DmSans,
-                fontWeight = FontWeight.Medium,
-                fontSize = 15.sp,
-                color = OnSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = subtitle,
-                    fontFamily = DmSans,
-                    fontSize = 12.sp,
-                    color = OnSurfaceVariant,
-                    maxLines = 1,
+            .drawBehind {
+                drawPlayerAura(
+                    accent = cardAccent,
+                    energy = level.value * pauseFade,
+                    phase = phase.floatValue,
                 )
-                if (timerText != null) {
-                    Spacer(Modifier.width(8.dp))
-                    Row(
-                        modifier = Modifier
-                            .height(20.dp)
-                            .clip(RoundedCornerShape(7.dp))
-                            .background(OnSurface.copy(alpha = 0.07f))
-                            .noRippleClickable(onClick = onTimerClick)
-                            .padding(horizontal = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        TimerGlyph(OnSurfaceVariant, 10.dp)
-                        Spacer(Modifier.width(3.dp))
-                        Text(
-                            text = timerText,
-                            style = Numeric,
-                            fontSize = 10.sp,
-                            color = OnSurfaceVariant,
+            }
+            .border(1.dp, cardAccent.copy(alpha = 0.26f), shape),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .graphicsLayer {
+                        val s = 1f + level.value * pauseFade * 0.02f
+                        scaleX = s
+                        scaleY = s
+                    }
+                    .drawBehind {
+                        val min = size.minDimension
+                        val e = (level.value * pauseFade).coerceIn(0f, 1f)
+                        val halo = min * (0.55f + e * 0.10f)
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    cardAccent.copy(alpha = 0.20f + e * 0.18f),
+                                    Color.Transparent,
+                                ),
+                                center = center,
+                                radius = halo,
+                            ),
+                            radius = halo,
                         )
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                ColorOrb(
+                    color = orbTint,
+                    size = 40.dp,
+                    ring = true,
+                    ringAlpha = 0.80f,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    text = title,
+                    fontFamily = Fraunces,
+                    fontSize = 17.sp,
+                    lineHeight = 20.sp,
+                    color = OnSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = subtitle,
+                        fontFamily = DmSans,
+                        fontSize = 11.5.sp,
+                        color = OnSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (statusChip != null) {
+                        Spacer(Modifier.width(7.dp))
+                        statusChip()
                     }
                 }
             }
-        }
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .pressable(scale = 0.90f, onClick = onToggle)
-                .clip(CircleShape)
-                .background(accent)
-                .semantics { contentDescription = if (playing) "Pause" else "Play" },
-            contentAlignment = Alignment.Center,
-        ) {
-            Crossfade(playing, animationSpec = tween(180), label = "play state") { isPlaying ->
-                PlayPauseIcon(isPlaying, Ink, 18.dp)
+            Spacer(Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .pressable(scale = 0.90f, onClick = onToggle)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(lerp(cardAccent, Color.White, 0.18f), cardAccent),
+                        ),
+                    )
+                    .border(1.dp, Color.White.copy(alpha = 0.12f), CircleShape)
+                    .semantics {
+                        contentDescription = if (playing) pauseDescription else playDescription
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Crossfade(playing, animationSpec = tween(180), label = "play state") { isPlaying ->
+                    PlayPauseIcon(isPlaying, Ink, 18.dp)
+                }
             }
         }
     }
+}
+
+/** Two slow colour fields, behind the card content. */
+private fun DrawScope.drawPlayerAura(
+    accent: Color,
+    energy: Float,
+    phase: Float,
+) {
+    val w = size.width
+    val h = size.height
+    val e = energy.coerceIn(0f, 1f)
+    val drift = sin(phase * 2.0 * PI).toFloat()
+    val drift2 = sin(phase * 2.0 * PI + 1.7).toFloat()
+
+    val primaryX = w * (0.16f + drift * 0.035f)
+    val primaryY = h * (0.58f + drift2 * 0.06f)
+    val primaryRadius = h * (0.98f + e * 0.22f)
+    drawCircle(
+        brush = Brush.radialGradient(
+            0f to accent.copy(alpha = 0.19f + e * 0.17f),
+            0.48f to accent.copy(alpha = 0.07f + e * 0.07f),
+            1f to Color.Transparent,
+            center = Offset(primaryX, primaryY),
+            radius = primaryRadius,
+        ),
+        radius = primaryRadius,
+        center = Offset(primaryX, primaryY),
+    )
+
+    val secondaryX = w * (0.84f - drift * 0.03f)
+    val secondaryY = h * (0.28f + drift2 * 0.05f)
+    val secondaryRadius = h * (0.82f + e * 0.18f)
+    drawCircle(
+        brush = Brush.radialGradient(
+            0f to lerp(accent, Color.White, 0.20f).copy(alpha = 0.11f + e * 0.08f),
+            1f to Color.Transparent,
+            center = Offset(secondaryX, secondaryY),
+            radius = secondaryRadius,
+        ),
+        radius = secondaryRadius,
+        center = Offset(secondaryX, secondaryY),
+    )
+
+    drawRect(
+        brush = Brush.verticalGradient(
+            0f to Color.Transparent,
+            1f to accent.copy(alpha = 0.035f + e * 0.035f),
+        ),
+    )
 }
 
 @Composable
@@ -1085,8 +1258,26 @@ fun EmptySounds(onCreate: () -> Unit) {
             .fillMaxWidth()
             .pressable(scale = 0.995f, onClick = onCreate)
             .clip(RoundedCornerShape(24.dp))
-            .background(Surface)
-            .border(1.dp, Hairline, RoundedCornerShape(24.dp))
+            .background(
+                Brush.verticalGradient(
+                    listOf(Surface.copy(alpha = 0.72f), Surface.copy(alpha = 0.58f)),
+                ),
+            )
+            .drawBehind {
+                drawLine(
+                    brush = Brush.horizontalGradient(
+                        listOf(
+                            Color.Transparent,
+                            Color.White.copy(alpha = 0.07f),
+                            Color.Transparent,
+                        ),
+                    ),
+                    start = Offset(24.dp.toPx(), 1.dp.toPx()),
+                    end = Offset(size.width - 24.dp.toPx(), 1.dp.toPx()),
+                    strokeWidth = 1.dp.toPx(),
+                )
+            }
+            .border(1.dp, OnSurface.copy(alpha = 0.07f), RoundedCornerShape(24.dp))
             .padding(horizontal = 24.dp, vertical = 26.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -1135,7 +1326,11 @@ fun BottomBar(onSettings: () -> Unit) {
                 .height(52.dp)
                 .pressable(scale = 0.99f, onClick = onSettings)
                 .clip(RoundedCornerShape(18.dp))
-                .background(SurfaceHigh)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(lerp(SurfaceHigh, Color.White, 0.06f), SurfaceHigh),
+                    ),
+                )
                 .border(1.dp, Hairline, RoundedCornerShape(18.dp)),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
