@@ -46,19 +46,22 @@ fun ColorsOfNoiseApp(
     onPreviewStop: () -> Unit,
     onDiscardPreview: () -> Unit,
     onPreviewParams: (Draft) -> Unit,
+    previewHintSeen: Boolean,
+    onPreviewHintSeen: () -> Unit,
     scope: () -> FloatArray?,
 ) {
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
     var sheet by remember { mutableStateOf<HomeSheet?>(null) }
     var previewActive by remember { mutableStateOf(false) }
     var previewTouched by remember { mutableStateOf(false) }
+    var previewHintDismissed by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<SavedSound?>(null) }
-    var justSavedId by remember { mutableStateOf<String?>(null) }
+    var savedId by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(justSavedId) {
-        if (justSavedId != null) {
-            delay(1_300)
-            justSavedId = null
+    LaunchedEffect(savedId) {
+        if (savedId != null) {
+            delay(1_200)
+            savedId = null
         }
     }
 
@@ -130,7 +133,7 @@ fun ColorsOfNoiseApp(
                 onCreate = { openEditor(null) },
                 onSettings = { sheet = HomeSheet.Playback },
                 timerEndWall = ui.timerEndWall,
-                highlightId = justSavedId,
+                savedId = savedId,
                 showReorderHint = showReorderHint,
                 onReorderHintSeen = onReorderHintSeen,
                 onMoveSound = onMoveSound,
@@ -144,6 +147,7 @@ fun ColorsOfNoiseApp(
                     ?: Draft(color = if (ui.loaded) ui.params.color else NoiseColor.WHITE),
                 editing = current.sound != null,
                 previewing = previewActive,
+                showPreviewHint = !previewHintSeen && !previewHintDismissed,
                 scope = scope,
                 onDraftChanged = { draft ->
                     if (previewActive) onPreviewParams(draft)
@@ -151,7 +155,7 @@ fun ColorsOfNoiseApp(
                 onBack = { leaveEditor() },
                 onSave = { draft ->
                     val saved = onSaveDraft(draft, current.sound?.id, previewTouched)
-                    justSavedId = saved.id
+                    savedId = saved.id
                     previewActive = false
                     previewTouched = false
                     screen = Screen.Home
@@ -161,6 +165,8 @@ fun ColorsOfNoiseApp(
                         onPreviewStop()
                         previewActive = false
                     } else {
+                        previewHintDismissed = true
+                        onPreviewHintSeen()
                         onPreviewStart(draft)
                         previewActive = true
                         previewTouched = true

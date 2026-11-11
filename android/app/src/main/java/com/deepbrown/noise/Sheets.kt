@@ -152,8 +152,7 @@ fun NameSheet(
                 value = value,
                 onValueChange = { value = it },
                 placeholder = placeholder,
-                autoFocus = true,
-                selectAll = initial.isNotEmpty(),
+                selectAllOnFocus = initial.isNotEmpty(),
                 onSubmit = {
                     if (value.isNotBlank()) onSave(value.trim())
                 },

@@ -64,10 +64,18 @@ class SoundStore(context: Context) {
             prefs.edit().putBoolean(KEY_REORDER_HINT, value).apply()
         }
 
+    /** The editor hint about pressing play is only shown until preview is used once. */
+    var previewHintSeen: Boolean
+        get() = prefs.getBoolean(KEY_PREVIEW_HINT, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_PREVIEW_HINT, value).apply()
+        }
+
     private companion object {
         const val PREFS = "deepbrown"
         const val KEY_LIBRARY = "library_v1"
         const val KEY_VOLUME = "volume"
         const val KEY_REORDER_HINT = "reorder_hint_seen"
+        const val KEY_PREVIEW_HINT = "preview_hint_seen"
     }
 }

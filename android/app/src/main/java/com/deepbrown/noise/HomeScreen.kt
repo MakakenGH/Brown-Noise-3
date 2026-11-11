@@ -69,7 +69,7 @@ fun HomeScreen(
     onCreate: () -> Unit,
     onSettings: () -> Unit,
     timerEndWall: Long,
-    highlightId: String?,
+    savedId: String?,
     showReorderHint: Boolean,
     onReorderHintSeen: () -> Unit,
     onMoveSound: (Int, Int) -> Unit,
@@ -153,7 +153,7 @@ fun HomeScreen(
                             sound = sound,
                             active = loaded && sound.id == soundId,
                             playing = playing,
-                            highlight = sound.id == highlightId,
+                            justSaved = sound.id == savedId,
                             onPlay = { onPlaySound(sound) },
                             onMenu = { onSoundMenu(sound) },
                             onMoveUp = if (index > 0) {

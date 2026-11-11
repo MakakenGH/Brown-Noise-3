@@ -94,6 +94,8 @@ class MainActivity : ComponentActivity() {
                         onPreviewStop = ::pausePlayback,
                         onDiscardPreview = ::discardPreview,
                         onPreviewParams = ::updatePreview,
+                        previewHintSeen = store.previewHintSeen,
+                        onPreviewHintSeen = { store.previewHintSeen = true },
                         scope = { service?.scope() },
                     )
                 }

@@ -1,8 +1,13 @@
 package com.deepbrown.noise
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -48,6 +53,8 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -71,6 +78,7 @@ fun EditorScreen(
     initial: Draft,
     editing: Boolean,
     previewing: Boolean,
+    showPreviewHint: Boolean,
     scope: () -> FloatArray?,
     onDraftChanged: (Draft) -> Unit,
     onBack: () -> Unit,
@@ -280,15 +288,6 @@ fun EditorScreen(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            LiveWaveform(
-                color = accent,
-                playing = previewing,
-                scope = scope,
-                modifier = Modifier
-                    .width(42.dp)
-                    .height(18.dp)
-                    .padding(end = 10.dp),
-            )
             Box(
                 modifier = Modifier
                     .size(48.dp)
@@ -302,6 +301,19 @@ fun EditorScreen(
                 }
             }
         }
+
+        AnimatedVisibility(
+            visible = showPreviewHint && !previewing,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
+                .padding(end = 18.dp, bottom = 96.dp),
+            enter = fadeIn(tween(260, delayMillis = 320)) +
+                slideInVertically(tween(300, delayMillis = 320)) { it / 3 },
+            exit = fadeOut(tween(160)) + slideOutVertically(tween(180)) { it / 4 },
+        ) {
+            PreviewHint(accent = accent)
+        }
     }
 
     if (showDiscard) {
@@ -309,7 +321,10 @@ fun EditorScreen(
             title = "Discard changes?",
             message = "Your edits to this sound will be lost.",
             confirmLabel = "Discard",
-            onConfirm = onBack,
+            onConfirm = {
+                showDiscard = false
+                onBack()
+            },
             onDismiss = { showDiscard = false },
         )
     }
@@ -329,6 +344,46 @@ fun EditorScreen(
             },
             onDismiss = { showNameSheet = false },
         )
+    }
+}
+
+/** Points down at the play button; shown until preview has been used once. */
+@Composable
+private fun PreviewHint(accent: Color) {
+    Column(horizontalAlignment = Alignment.End) {
+        Row(
+            modifier = Modifier
+                .shadow(12.dp, RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(12.dp))
+                .background(SurfaceHigh)
+                .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                .padding(horizontal = 11.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            PlayPauseIcon(playing = false, tint = accent, size = 11.dp)
+            Spacer(Modifier.width(7.dp))
+            Text(
+                text = "Press play to hear it",
+                fontFamily = DmSans,
+                fontWeight = FontWeight.Medium,
+                fontSize = 11.5.sp,
+                color = OnSurface,
+            )
+        }
+        Canvas(
+            Modifier
+                .padding(end = 22.dp)
+                .size(width = 10.dp, height = 6.dp),
+        ) {
+            val caret = Path().apply {
+                moveTo(0f, 0f)
+                lineTo(size.width, 0f)
+                lineTo(size.width / 2f, size.height)
+                close()
+            }
+            drawPath(caret, SurfaceHigh)
+            drawPath(caret, accent.copy(alpha = 0.35f), style = Stroke(width = 1.dp.toPx()))
+        }
     }
 }
 
