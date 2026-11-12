@@ -9,6 +9,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.IndicationNodeFactory
@@ -96,6 +97,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlin.math.PI
 import kotlin.math.abs
@@ -1367,65 +1369,79 @@ fun ConfirmDialog(
     onDismiss: () -> Unit,
     destructive: Boolean = true,
 ) {
+    var confirming by remember { mutableStateOf(false) }
+    var closing by remember { mutableStateOf(false) }
+    LaunchedEffect(confirming) {
+        if (!confirming) return@LaunchedEffect
+        delay(120)
+        closing = true
+        delay(220)
+        onConfirm()
+    }
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!confirming) onDismiss() },
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 28.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(SurfaceHigh)
-                .border(1.dp, Hairline, RoundedCornerShape(28.dp))
-                .padding(24.dp),
+        AnimatedVisibility(
+            visible = !closing,
+            exit = fadeOut(tween(220)) + scaleOut(tween(220), targetScale = 0.96f),
         ) {
-            Text(
-                text = title,
-                fontFamily = Fraunces,
-                fontSize = 22.sp,
-                lineHeight = 28.sp,
-                letterSpacing = (-0.2).sp,
-                color = OnSurface,
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = message,
-                fontFamily = DmSans,
-                fontSize = 13.sp,
-                lineHeight = 19.sp,
-                color = OnSurfaceVariant,
-            )
-            Spacer(Modifier.height(22.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(46.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Surface)
-                        .border(1.dp, Hairline, RoundedCornerShape(16.dp))
-                        .clickable(onClick = onDismiss),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("Cancel", fontFamily = DmSans, fontWeight = FontWeight.Medium, fontSize = 13.sp, color = OnSurface)
-                }
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(46.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(if (destructive) Danger else OnSurface)
-                        .clickable(onClick = onConfirm),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = confirmLabel,
-                        fontFamily = DmSans,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp,
-                        color = if (destructive) DangerInk else Ink,
-                    )
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 28.dp)
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(SurfaceHigh)
+                    .border(1.dp, Hairline, RoundedCornerShape(28.dp))
+                    .padding(24.dp),
+            ) {
+                Text(
+                    text = title,
+                    fontFamily = Fraunces,
+                    fontSize = 22.sp,
+                    lineHeight = 28.sp,
+                    letterSpacing = (-0.2).sp,
+                    color = OnSurface,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = message,
+                    fontFamily = DmSans,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp,
+                    color = OnSurfaceVariant,
+                )
+                Spacer(Modifier.height(22.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(46.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Surface)
+                            .border(1.dp, Hairline, RoundedCornerShape(16.dp))
+                            .clickable { if (!confirming) onDismiss() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("Cancel", fontFamily = DmSans, fontWeight = FontWeight.Medium, fontSize = 13.sp, color = OnSurface)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(46.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(if (destructive) Danger else OnSurface)
+                            .clickable { if (!confirming) confirming = true },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = confirmLabel,
+                            fontFamily = DmSans,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp,
+                            color = if (destructive) DangerInk else Ink,
+                        )
+                    }
                 }
             }
         }

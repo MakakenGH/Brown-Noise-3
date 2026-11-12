@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -82,6 +82,8 @@ fun HomeScreen(
     val density = LocalDensity.current
     val scopeCoroutine = rememberCoroutineScope()
     val stridePx = with(density) { SoundCardStride.toPx() }
+    val dragBottomInset = if (loaded) 160.dp else 68.dp
+    val currentDragBottomInset by rememberUpdatedState(dragBottomInset)
     val currentSounds by rememberUpdatedState(sounds)
 
     var draggedId by remember { mutableStateOf<String?>(null) }
@@ -110,16 +112,15 @@ fun HomeScreen(
             modifier = Modifier.fillMaxSize(),
         )
 
-        Column(Modifier.fillMaxSize()) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .statusBarsPadding(),
-                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 184.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
                 item {
                     SectionHeader("Colors of Noise")
                 }
@@ -212,9 +213,10 @@ fun HomeScreen(
                                                 val bottom = top + info.size
                                                 val viewportStart = listState.layoutInfo.viewportStartOffset
                                                 val viewportEnd = listState.layoutInfo.viewportEndOffset
+                                                val bottomInsetPx = with(density) { currentDragBottomInset.toPx() }
                                                 if (top < viewportStart + 72) {
                                                     scopeCoroutine.launch { listState.scrollBy(-12f) }
-                                                } else if (bottom > viewportEnd - 72) {
+                                                } else if (bottom > viewportEnd - bottomInsetPx - 72) {
                                                     scopeCoroutine.launch { listState.scrollBy(12f) }
                                                 }
                                             }
@@ -240,8 +242,13 @@ fun HomeScreen(
                         )
                     }
                 }
-            }
+        }
 
+        Column(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth(),
+        ) {
             AnimatedVisibility(
                 visible = loaded,
                 enter = fadeIn(tween(220)) + expandVertically(tween(280), expandFrom = Alignment.Bottom),
