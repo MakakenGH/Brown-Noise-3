@@ -8,14 +8,17 @@ be shaped while they play.
 
 * Colors of Noise: tap White, Brown, Pink or Green to start a generic noise of
   that colour. It plays immediately and is not added to your collection.
-* My sounds: save your own sounds with a name, colour, deepness, rumble, width
-  and swell. Tap a saved sound to play or stop it; its three-dot menu opens edit,
-  rename and delete. Add a sound with the plus next to the header. Hold a card and
-  drag to reorder the collection.
+* My sounds: save your own sounds with a name, colour, deepness, rumble, air,
+  grain, width, swell and drift. Tap a saved sound to play or stop it; its
+  three-dot menu opens edit, rename and delete. Add a sound with the plus next
+  to the header. Hold a card and drag to reorder the collection.
+* Start from presets such as Still, Rain, Ocean, Fan, Night, Focus and
+  Crackle, or tap Surprise for a random starting point.
 * A now-playing card above the bottom bar always shows the loaded sound and lets
   you play or pause it. Tap its body to open the sound in the editor.
-* Volume and a sleep timer (15 min, 30 min, 1 h, 2 h) live in Playback settings;
-  the remaining time appears in the now-playing card while a timer is running.
+* Volume, a sleep timer (15 min, 30 min, 1 h, 2 h) and fades (a gentle start
+  and a 30 s to 20 min sleep fade) live in Playback settings; the remaining
+  time appears in the now-playing card while a timer is running.
 * The Noise Generator editor previews changes live while it plays.
 * Playback runs in a foreground media service, so it keeps going when the app is
   minimized, the screen is off, or the activity is gone. Lock-screen and headset
@@ -56,9 +59,10 @@ android/app/src/main/java/com/deepbrown/noise/
   MainActivity.kt   UI entry point, service binding and library actions
   App.kt            Home/editor navigation and bottom sheets
   HomeScreen.kt     Quick Noise, the sound collection and bottom bar
-  EditorScreen.kt   Noise Generator editor with the deepness control
+  EditorScreen.kt   Noise Generator editor with live preview and sound shaping
   Sheets.kt         Sound settings, rename/naming and playback sheets
   Components.kt     Rows, sliders, colour picker, icons and small parts
+  Presets.kt        Curated starting points and the random draft
   Theme.kt          Palette and typography
   Model.kt          Noise colours, saved sounds and editor drafts
   SoundStore.kt     Local persistence for the collection and volume

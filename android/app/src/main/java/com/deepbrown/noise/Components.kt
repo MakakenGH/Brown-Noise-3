@@ -21,9 +21,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -35,6 +37,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -742,6 +745,19 @@ fun SliderTrack(
     }
 }
 
+/** The shared rounded surface for a group of parameter rows. */
+@Composable
+fun ParameterCard(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
+            .background(Surface)
+            .border(1.dp, Hairline, RoundedCornerShape(24.dp)),
+        content = content,
+    )
+}
+
 /** One control inside a grouped parameter surface. */
 @Composable
 fun ParameterRow(
@@ -750,6 +766,8 @@ fun ParameterRow(
     description: String,
     accent: Color,
     onChange: (Float) -> Unit,
+    startLabel: String? = null,
+    endLabel: String? = null,
 ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -778,6 +796,12 @@ fun ParameterRow(
             )
         }
         SliderTrack(value = value, onChange = onChange, accent = accent, contentDescription = label)
+        if (startLabel != null && endLabel != null) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(startLabel, fontFamily = DmSans, fontSize = 10.sp, color = LabelMuted)
+                Text(endLabel, fontFamily = DmSans, fontSize = 10.sp, color = LabelMuted)
+            }
+        }
         Text(
             text = description,
             fontFamily = DmSans,
@@ -788,9 +812,74 @@ fun ParameterRow(
     }
 }
 
+/** A horizontally scrolling row of starting points above the editor controls. */
 @Composable
-fun SectionHeader(title: String, trailing: String? = null) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+fun PresetRow(
+    accent: Color,
+    onPreset: (Preset) -> Unit,
+    onRandom: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val haptics = LocalHapticFeedback.current
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Start from",
+            fontFamily = DmSans,
+            fontWeight = FontWeight.Medium,
+            fontSize = 11.sp,
+            color = LabelMuted,
+            modifier = Modifier.padding(end = 2.dp),
+        )
+        Presets.forEach { preset ->
+            PresetChip(label = preset.name, dot = preset.color.dot) {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onPreset(preset)
+            }
+        }
+        PresetChip(label = "Surprise", dot = accent) {
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            onRandom()
+        }
+    }
+}
+
+@Composable
+private fun PresetChip(label: String, dot: Color, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .height(34.dp)
+            .pressable(scale = 0.94f, onClick = onClick)
+            .clip(RoundedCornerShape(14.dp))
+            .background(SurfaceHigh)
+            .border(1.dp, Hairline, RoundedCornerShape(14.dp))
+            .padding(horizontal = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(dot),
+        )
+        Spacer(Modifier.width(7.dp))
+        Text(
+            text = label,
+            fontFamily = DmSans,
+            fontWeight = FontWeight.Medium,
+            fontSize = 12.sp,
+            color = OnSurface,
+        )
+    }
+}
+
+@Composable
+fun SectionHeader(title: String, trailing: String? = null) {    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(
             text = title,
             fontFamily = Fraunces,

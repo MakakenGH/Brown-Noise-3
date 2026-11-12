@@ -24,6 +24,7 @@ class NoiseEngine(
     private var track: AudioTrack? = null
 
     @Volatile private var sleepEndElapsed = 0L
+    @Volatile private var sleepFadeMs = 30_000L
 
     /** Called from the audio thread when playback ends without a user request. */
     var onUnexpectedStop: (() -> Unit)? = null
@@ -34,6 +35,7 @@ class NoiseEngine(
         if (running) return
         intentionalStop = false
         running = true
+        dsp.resetUserFade()
         thread = Thread({ audioLoop() }, "DeepBrownAudio").apply {
             priority = Thread.MAX_PRIORITY
             start()
@@ -61,6 +63,14 @@ class NoiseEngine(
     fun setSleepEnd(elapsedRealtimeMs: Long) {
         sleepEndElapsed = elapsedRealtimeMs
         if (elapsedRealtimeMs <= 0) dsp.setSleepGain(1.0)
+    }
+
+    fun setSleepFade(ms: Long) {
+        sleepFadeMs = ms.coerceAtLeast(0L)
+    }
+
+    fun setFadeIn(seconds: Int) {
+        dsp.setFadeIn(seconds)
     }
 
     fun scope(): FloatArray? = if (running) dsp.copyScope(72) else null
@@ -114,7 +124,10 @@ class NoiseEngine(
             t.play()
             while (running) {
                 val sleep = if (sleepEndElapsed > 0L) {
-                    ((sleepEndElapsed - SystemClock.elapsedRealtime()) / 30_000.0).coerceIn(0.0, 1.0)
+                    Sound.sleepGain(
+                        sleepEndElapsed - SystemClock.elapsedRealtime(),
+                        sleepFadeMs,
+                    )
                 } else {
                     1.0
                 }

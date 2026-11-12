@@ -22,6 +22,9 @@ data class SavedSound(
     val rumble: Float,
     val width: Float,
     val swell: Float,
+    val texture: Float = 0f,
+    val air: Float = 0f,
+    val drift: Float = 0f,
 ) {
     fun params(volume: Float): Params = Params(
         deep = deep,
@@ -30,6 +33,9 @@ data class SavedSound(
         swell = swell,
         volume = volume,
         color = color,
+        texture = texture,
+        air = air,
+        drift = drift,
     )
 }
 
@@ -41,6 +47,9 @@ data class Draft(
     val rumble: Float = 0.20f,
     val width: Float = 0.20f,
     val swell: Float = 0.0f,
+    val texture: Float = 0.0f,
+    val air: Float = 0f,
+    val drift: Float = 0.0f,
 ) {
     fun params(volume: Float): Params = Params(
         deep = deep,
@@ -49,6 +58,9 @@ data class Draft(
         swell = swell,
         volume = volume,
         color = color,
+        texture = texture,
+        air = air,
+        drift = drift,
     )
 
     companion object {
@@ -59,6 +71,9 @@ data class Draft(
             rumble = sound.rumble,
             width = sound.width,
             swell = sound.swell,
+            texture = sound.texture,
+            air = sound.air,
+            drift = sound.drift,
         )
     }
 }
@@ -67,14 +82,18 @@ data class Draft(
 fun quickParams(color: NoiseColor, volume: Float): Params = when (color) {
     NoiseColor.WHITE -> Params(
         deep = 0.05f, rumble = 0.15f, width = 0.55f, swell = 0f, volume = volume, color = color,
+        texture = 0f, air = 0f, drift = 0f,
     )
     NoiseColor.PINK -> Params(
         deep = 0.10f, rumble = 0.20f, width = 0.60f, swell = 0f, volume = volume, color = color,
+        texture = 0f, air = 0f, drift = 0f,
     )
     NoiseColor.GREEN -> Params(
         deep = 0.0f, rumble = 0.10f, width = 0.65f, swell = 0f, volume = volume, color = color,
+        texture = 0f, air = 0f, drift = 0f,
     )
     NoiseColor.BROWN -> Params(
         deep = 0.50f, rumble = 0.35f, width = 0.60f, swell = 0.10f, volume = volume, color = color,
+        texture = 0f, air = 0f, drift = 0f,
     )
 }

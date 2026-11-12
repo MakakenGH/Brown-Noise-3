@@ -175,6 +175,11 @@ fun EditorScreen(
                     .padding(top = 8.dp, bottom = 140.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
+                PresetRow(
+                    accent = draft.color.dot,
+                    onPreset = { preset -> update(preset.toDraft(draft.name)) },
+                    onRandom = { update(randomDraft().copy(name = draft.name)) },
+                )
                 DeepnessField(
                     draft = draft,
                     previewing = previewing,
@@ -185,19 +190,25 @@ fun EditorScreen(
                     selected = draft.color,
                     onSelect = { update(draft.copy(color = it)) },
                 )
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(Surface)
-                        .border(1.dp, Hairline, RoundedCornerShape(24.dp)),
-                ) {
+                ParameterCard {
                     ParameterRow(
                         label = "Rumble",
                         value = draft.rumble,
                         description = "Extra weight below 90 Hz",
                         accent = draft.color.dot,
+                        startLabel = "Light",
+                        endLabel = "Heavy",
                         onChange = { update(draft.copy(rumble = it)) },
+                    )
+                    HairlineDivider(startPadding = 18.dp)
+                    ParameterRow(
+                        label = "Air",
+                        value = draft.air,
+                        description = "Adds air and detail above the deepness",
+                        accent = draft.color.dot,
+                        startLabel = "Hushed",
+                        endLabel = "Airy",
+                        onChange = { update(draft.copy(air = it)) },
                     )
                     HairlineDivider(startPadding = 18.dp)
                     ParameterRow(
@@ -205,15 +216,41 @@ fun EditorScreen(
                         value = draft.width,
                         description = "From centred to enveloping",
                         accent = draft.color.dot,
+                        startLabel = "Centred",
+                        endLabel = "Enveloping",
                         onChange = { update(draft.copy(width = it)) },
                     )
-                    HairlineDivider(startPadding = 18.dp)
+                }
+                ParameterCard {
+                    ParameterRow(
+                        label = "Grain",
+                        value = draft.texture,
+                        description = "Smooth to crackling — adds rain and fire texture",
+                        accent = draft.color.dot,
+                        startLabel = "Smooth",
+                        endLabel = "Crackling",
+                        onChange = { update(draft.copy(texture = it)) },
+                    )
+                }
+                ParameterCard {
                     ParameterRow(
                         label = "Swell",
                         value = draft.swell,
-                        description = "Slow, never-repeating breathing",
+                        description = "Slow breathing above the deepness",
                         accent = draft.color.dot,
+                        startLabel = "Still",
+                        endLabel = "Breathing",
                         onChange = { update(draft.copy(swell = it)) },
+                    )
+                    HairlineDivider(startPadding = 18.dp)
+                    ParameterRow(
+                        label = "Drift",
+                        value = draft.drift,
+                        description = "Still to drifting — slow, organic movement",
+                        accent = draft.color.dot,
+                        startLabel = "Still",
+                        endLabel = "Drifting",
+                        onChange = { update(draft.copy(drift = it)) },
                     )
                 }
             }

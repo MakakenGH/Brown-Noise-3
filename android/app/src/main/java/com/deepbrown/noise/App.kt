@@ -42,6 +42,8 @@ fun ColorsOfNoiseApp(
     onRenameSound: (SavedSound, String) -> Unit,
     onVolume: (Float) -> Unit,
     onTimer: (Int) -> Unit,
+    onFadeIn: (Int) -> Unit,
+    onFadeOut: (Int) -> Unit,
     onPreviewStart: (Draft) -> Unit,
     onPreviewStop: () -> Unit,
     onDiscardPreview: () -> Unit,
@@ -90,6 +92,9 @@ fun ColorsOfNoiseApp(
                 rumble = ui.params.rumble,
                 width = ui.params.width,
                 swell = ui.params.swell,
+                texture = ui.params.texture,
+                air = ui.params.air,
+                drift = ui.params.drift,
             ),
         )
     }
@@ -211,8 +216,12 @@ fun ColorsOfNoiseApp(
             PlaybackSettingsSheet(
                 volume = ui.params.volume,
                 timerMin = ui.timerMin,
+                fadeInSec = ui.fadeInSec,
+                fadeOutSec = ui.fadeOutSec,
                 onVolume = onVolume,
                 onTimer = onTimer,
+                onFadeIn = onFadeIn,
+                onFadeOut = onFadeOut,
                 onDismiss = { sheet = null },
             )
         }

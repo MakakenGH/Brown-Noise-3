@@ -9,7 +9,7 @@ import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-/** The five user-facing sound controls. */
+/** The user-facing sound controls. */
 data class Params(
     val deep: Float = 0.50f,
     val rumble: Float = 0.35f,
@@ -17,6 +17,9 @@ data class Params(
     val swell: Float = 0.10f,
     val volume: Float = 0.55f,
     val color: NoiseColor = NoiseColor.BROWN,
+    val texture: Float = 0f,
+    val air: Float = 0f,
+    val drift: Float = 0f,
 ) {
     fun clamped(): Params = Params(
         deep = deep.coerceIn(0f, 1f),
@@ -25,6 +28,9 @@ data class Params(
         swell = swell.coerceIn(0f, 1f),
         volume = volume.coerceIn(0f, 1f),
         color = color,
+        texture = texture.coerceIn(0f, 1f),
+        air = air.coerceIn(0f, 1f),
+        drift = drift.coerceIn(0f, 1f),
     )
 
     fun with(key: String, value: Float): Params = when (key) {
@@ -33,6 +39,9 @@ data class Params(
         "width" -> copy(width = value)
         "swell" -> copy(swell = value)
         "volume" -> copy(volume = value)
+        "texture" -> copy(texture = value)
+        "air" -> copy(air = value)
+        "drift" -> copy(drift = value)
         else -> this
     }
 }
@@ -45,10 +54,25 @@ data class DspParams(
     val swellCents: Double,
     val volume: Double,
     val color: NoiseColor = NoiseColor.BROWN,
+    val air: Double = 0.0,
+    val texture: Double = 0.0,
+    val drift: Double = 0.0,
 )
 
 object Sound {
     const val SHELF_HZ = 90.0
+    /** High-pass corner for the parallel air layer. */
+    const val AIR_HZ = 3000.0
+    const val AIR_Q = 0.707
+    const val AIR_NORM = 0.05
+
+    /* Grain is a parallel sparse-noise layer: dense velvet noise at low
+     * texture, discrete clicks at high texture. */
+    const val GRAIN_MIN_PPS = 250.0
+    const val GRAIN_MAX_PPS = 2500.0
+    const val GRAIN_F0 = 2500.0
+    const val GRAIN_Q = 2.0
+    const val GRAIN_NORM = 0.5
     const val HP_HZ = 18.0
     const val TARGET_RMS = 0.14
 
@@ -66,6 +90,14 @@ object Sound {
     fun shelfDb(rumble: Float): Double = rumble.toDouble() * 12.0
     fun swellCents(swell: Float): Double = swell.toDouble() * 700.0
     fun volumeGain(volume: Float): Double = volume.toDouble() * volume.toDouble()
+
+    /** Smoothstep sleep fade: 1 outside the fade window, 0 at the timer end. */
+    fun sleepGain(remainingMs: Long, fadeMs: Long): Double {
+        if (remainingMs <= 0L) return 0.0
+        if (fadeMs <= 0L) return 1.0
+        val x = (remainingMs.toDouble() / fadeMs).coerceIn(0.0, 1.0)
+        return x * x * (3.0 - 2.0 * x)
+    }
 
     /* Loudness model: the RMS of the filtered noise from the filters' exact
      * frequency responses, so the level stays even while depth, rumble and
@@ -112,6 +144,36 @@ object Sound {
         coeffs("lowpass", cut, Q_LP2_DB, 0.0, fs),
         coeffs("lowshelf", SHELF_HZ, 0.0, shelf, fs),
     )
+
+    /** RBJ high-pass coefficients for the parallel air layer. */
+    fun highPassCoeffs(f0: Double, q: Double, fs: Int): DoubleArray {
+        val w0 = 2.0 * PI * f0 / fs
+        val alpha = sin(w0) / (2.0 * q)
+        val cs = cos(w0)
+        val a0 = 1.0 + alpha
+        return doubleArrayOf(
+            ((1.0 + cs) / 2.0) / a0,
+            -(1.0 + cs) / a0,
+            ((1.0 + cs) / 2.0) / a0,
+            (-2.0 * cs) / a0,
+            (1.0 - alpha) / a0,
+        )
+    }
+
+    /** RBJ constant-peak band-pass, used for the grain clicks. */
+    fun bandPassCoeffs(f0: Double, q: Double, fs: Int): DoubleArray {
+        val w0 = 2.0 * PI * f0 / fs
+        val alpha = sin(w0) / (2.0 * q)
+        val cs = cos(w0)
+        val a0 = 1.0 + alpha
+        return doubleArrayOf(
+            alpha / a0,
+            0.0,
+            -alpha / a0,
+            (-2.0 * cs) / a0,
+            (1.0 - alpha) / a0,
+        )
+    }
 
     /** RBJ band-pass coefficients for the green noise source. */
     fun greenCoeffs(fs: Int): DoubleArray {
@@ -182,5 +244,8 @@ fun Params.toDsp(): DspParams {
         swellCents = Sound.swellCents(swell),
         volume = Sound.volumeGain(volume),
         color = color,
+        air = air.toDouble(),
+        texture = texture.toDouble(),
+        drift = drift.toDouble(),
     )
 }

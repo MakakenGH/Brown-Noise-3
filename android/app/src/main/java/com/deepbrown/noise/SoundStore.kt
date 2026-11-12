@@ -26,6 +26,9 @@ class SoundStore(context: Context) {
                             rumble = o.optDouble("rumble", 0.35).toFloat().coerceIn(0f, 1f),
                             width = o.optDouble("width", 0.6).toFloat().coerceIn(0f, 1f),
                             swell = o.optDouble("swell", 0.1).toFloat().coerceIn(0f, 1f),
+                            texture = o.optDouble("texture", 0.0).toFloat().coerceIn(0f, 1f),
+                            air = o.optDouble("air", 0.0).toFloat().coerceIn(0f, 1f),
+                            drift = o.optDouble("drift", 0.0).toFloat().coerceIn(0f, 1f),
                         ),
                     )
                 }
@@ -46,7 +49,10 @@ class SoundStore(context: Context) {
                     .put("deep", s.deep.toDouble())
                     .put("rumble", s.rumble.toDouble())
                     .put("width", s.width.toDouble())
-                    .put("swell", s.swell.toDouble()),
+                    .put("swell", s.swell.toDouble())
+                    .put("texture", s.texture.toDouble())
+                    .put("air", s.air.toDouble())
+                    .put("drift", s.drift.toDouble()),
             )
         }
         prefs.edit().putString(KEY_LIBRARY, array.toString()).apply()

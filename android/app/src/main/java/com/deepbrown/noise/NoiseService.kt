@@ -36,6 +36,8 @@ data class UiState(
     val loaded: Boolean = false,
     val timerEndWall: Long = 0L,
     val timerMin: Int = 0,
+    val fadeInSec: Int = 2,
+    val fadeOutSec: Int = 300,
     val error: String? = null,
 )
 
@@ -69,6 +71,8 @@ class NoiseService : Service() {
     private var foregroundStarted = false
     private var timerEndWall = 0L
     private var timerMin = 0
+    private var fadeInSec = 2
+    private var fadeOutSec = 300
     private var errorText: String? = null
     @Volatile private var destroyed = false
 
@@ -122,6 +126,8 @@ class NoiseService : Service() {
         audioManager = getSystemService(AudioManager::class.java)
         engine = NoiseEngine(this)
         engine.setParams(params)
+        engine.setFadeIn(fadeInSec)
+        engine.setSleepFade(fadeOutSec * 1000L)
         engine.onUnexpectedStop = {
             handler.post { onAudioTrackStopped() }
         }
@@ -151,6 +157,9 @@ class NoiseService : Service() {
                         swell = intent.getFloatExtra(EXTRA_SWELL, params.swell),
                         volume = intent.getFloatExtra(EXTRA_VOLUME, params.volume),
                         color = NoiseColor.fromKey(intent.getStringExtra(EXTRA_COLOR)),
+                        texture = intent.getFloatExtra(EXTRA_TEXTURE, params.texture),
+                        air = intent.getFloatExtra(EXTRA_AIR, params.air),
+                        drift = intent.getFloatExtra(EXTRA_DRIFT, params.drift),
                     ).clamped()
                     startSound(
                         newParams,
@@ -237,6 +246,7 @@ class NoiseService : Service() {
         errorText = null
 
         engine.setParams(params)
+        engine.setFadeIn(fadeInSec)
         engine.setSleepEnd(0L)
         engine.setMasterTarget(1.0)
         if (!engine.isRunning) engine.start()
@@ -364,7 +374,30 @@ class NoiseService : Service() {
         timerEndWall = System.currentTimeMillis() + minutes * 60_000L
         handler.removeCallbacks(timerRunnable)
         handler.postDelayed(timerRunnable, minutes * 60_000L)
+        engine.setSleepFade(timerFadeMs(minutes))
         if (playing) engine.setSleepEnd(SystemClock.elapsedRealtime() + minutes * 60_000L)
+        publish()
+    }
+
+    private fun timerFadeMs(minutes: Int): Long =
+        minOf(fadeOutSec * 1000L, minutes * 60_000L / 2)
+
+    fun setFadeIn(seconds: Int) {
+        fadeInSec = seconds.coerceIn(0, 10)
+        engine.setFadeIn(fadeInSec)
+        persist()
+        publish()
+    }
+
+    fun setFadeOut(seconds: Int) {
+        fadeOutSec = seconds.coerceIn(30, 1200)
+        if (timerMin > 0) {
+            val remaining = timerEndWall - System.currentTimeMillis()
+            if (remaining > 0L) {
+                engine.setSleepFade(minOf(fadeOutSec * 1000L, remaining / 2))
+            }
+        }
+        persist()
         publish()
     }
 
@@ -401,6 +434,8 @@ class NoiseService : Service() {
             loaded = loaded,
             timerEndWall = timerEndWall,
             timerMin = timerMin,
+            fadeInSec = fadeInSec,
+            fadeOutSec = fadeOutSec,
             error = errorText,
         )
         listener?.invoke(state)
@@ -416,6 +451,7 @@ class NoiseService : Service() {
         }
         handler.removeCallbacks(timerRunnable)
         handler.postDelayed(timerRunnable, remaining)
+        engine.setSleepFade(minOf(fadeOutSec * 1000L, remaining / 2))
         engine.setSleepEnd(SystemClock.elapsedRealtime() + remaining)
     }
 
@@ -433,11 +469,16 @@ class NoiseService : Service() {
             swell = prefs.getFloat(KEY_SWELL, 0.10f),
             volume = prefs.getFloat(KEY_VOLUME, 0.55f),
             color = NoiseColor.fromKey(prefs.getString(KEY_COLOR, null)),
+            texture = prefs.getFloat(KEY_TEXTURE, 0f),
+            air = prefs.getFloat(KEY_AIR, 0f),
+            drift = prefs.getFloat(KEY_DRIFT, 0f),
         ).clamped()
         soundId = prefs.getString(KEY_SOUND_ID, null)
         soundName = prefs.getString(KEY_SOUND_NAME, null)
             ?: "${params.color.label} Noise"
         loaded = prefs.getBoolean(KEY_LOADED, false)
+        fadeInSec = prefs.getInt(KEY_FADE_IN, 2).coerceIn(0, 10)
+        fadeOutSec = prefs.getInt(KEY_FADE_OUT, 300).coerceIn(30, 1200)
     }
 
     private fun persist() {
@@ -447,10 +488,15 @@ class NoiseService : Service() {
             .putFloat(KEY_WIDTH, params.width)
             .putFloat(KEY_SWELL, params.swell)
             .putFloat(KEY_VOLUME, params.volume)
+            .putFloat(KEY_TEXTURE, params.texture)
+            .putFloat(KEY_AIR, params.air)
+            .putFloat(KEY_DRIFT, params.drift)
             .putString(KEY_COLOR, params.color.name)
             .putString(KEY_SOUND_NAME, soundName)
             .putString(KEY_SOUND_ID, soundId)
             .putBoolean(KEY_LOADED, loaded)
+            .putInt(KEY_FADE_IN, fadeInSec)
+            .putInt(KEY_FADE_OUT, fadeOutSec)
             .apply()
     }
 
@@ -644,6 +690,9 @@ class NoiseService : Service() {
         const val EXTRA_SWELL = "swell"
         const val EXTRA_VOLUME = "volume"
         const val EXTRA_COLOR = "color"
+        const val EXTRA_TEXTURE = "texture"
+        const val EXTRA_AIR = "air"
+        const val EXTRA_DRIFT = "drift"
         const val EXTRA_NAME = "name"
         const val EXTRA_ID = "id"
 
@@ -656,9 +705,14 @@ class NoiseService : Service() {
         private const val KEY_WIDTH = "width"
         private const val KEY_SWELL = "swell"
         private const val KEY_VOLUME = "volume"
+        private const val KEY_TEXTURE = "texture"
+        private const val KEY_AIR = "air"
+        private const val KEY_DRIFT = "drift"
         private const val KEY_COLOR = "color"
         private const val KEY_SOUND_NAME = "sound_name"
         private const val KEY_SOUND_ID = "sound_id"
         private const val KEY_LOADED = "sound_loaded"
+        private const val KEY_FADE_IN = "fade_in_sec"
+        private const val KEY_FADE_OUT = "fade_out_sec"
     }
 }

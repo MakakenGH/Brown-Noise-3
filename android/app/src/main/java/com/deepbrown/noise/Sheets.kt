@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -173,22 +175,26 @@ fun NameSheet(
 fun PlaybackSettingsSheet(
     volume: Float,
     timerMin: Int,
+    fadeInSec: Int,
+    fadeOutSec: Int,
     onVolume: (Float) -> Unit,
     onTimer: (Int) -> Unit,
+    onFadeIn: (Int) -> Unit,
+    onFadeOut: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val haptics = LocalHapticFeedback.current
     Sheet(onDismiss) {
         Column(
             Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .navigationBarsPadding()
                 .padding(bottom = 20.dp),
         ) {
             SheetTitle("Playback")
             Spacer(Modifier.height(4.dp))
-            SheetSubtitle("Level and how long it keeps going.")
+            SheetSubtitle("Level, timer and how the sound enters and leaves.")
             Spacer(Modifier.height(20.dp))
 
             Column(
@@ -227,55 +233,117 @@ fun PlaybackSettingsSheet(
                         color = OnSurface,
                     )
                     Spacer(Modifier.height(12.dp))
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        listOf(0 to "Off", 15 to "15 min", 30 to "30 min", 60 to "1 hour", 120 to "2 hours")
-                            .forEach { (minutes, label) ->
-                                val selected = timerMin == minutes
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(38.dp)
-                                        .pressable(scale = 0.94f) {
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            onTimer(minutes)
-                                        }
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(
-                                            if (selected) {
-                                                Brush.verticalGradient(
-                                                    listOf(lerp(OnSurface, Color.White, 0.12f), OnSurface),
-                                                )
-                                            } else {
-                                                Brush.verticalGradient(
-                                                    listOf(lerp(SurfaceHigh, Color.White, 0.05f), SurfaceHigh),
-                                                )
-                                            },
-                                        )
-                                        .border(
-                                            1.dp,
-                                            if (selected) {
-                                                Color.White.copy(alpha = 0.14f)
-                                            } else {
-                                                Hairline.copy(alpha = 0.6f)
-                                            },
-                                            RoundedCornerShape(12.dp),
-                                        ),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Text(
-                                        text = label,
-                                        fontFamily = DmSans,
-                                        fontWeight = FontWeight.Medium,
-                                        fontSize = 11.sp,
-                                        color = if (selected) Ink else OnSurfaceVariant,
-                                    )
-                                }
-                            }
-                    }
+                    ChoiceChipRow(
+                        options = listOf(0 to "Off", 15 to "15 min", 30 to "30 min", 60 to "1 hour", 120 to "2 hours"),
+                        selected = timerMin,
+                        onSelect = onTimer,
+                    )
                 }
+            }
+
+            Spacer(Modifier.height(24.dp))
+            Text(
+                "Fades",
+                fontFamily = DmSans,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.5.sp,
+                color = OnSurface,
+            )
+            Spacer(Modifier.height(8.dp))
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Surface)
+                    .border(1.dp, Hairline, RoundedCornerShape(24.dp)),
+            ) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
+                    Text(
+                        "Fade in",
+                        fontFamily = DmSans,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.5.sp,
+                        color = OnSurface,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    ChoiceChipRow(
+                        options = listOf(0 to "Off", 1 to "1 s", 2 to "2 s", 5 to "5 s"),
+                        selected = fadeInSec,
+                        onSelect = onFadeIn,
+                    )
+                }
+                HairlineDivider(startPadding = 18.dp)
+                Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
+                    Text(
+                        "Sleep fade",
+                        fontFamily = DmSans,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.5.sp,
+                        color = OnSurface,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    ChoiceChipRow(
+                        options = listOf(30 to "30 s", 60 to "1 min", 300 to "5 min", 600 to "10 min", 1200 to "20 min"),
+                        selected = fadeOutSec,
+                        onSelect = onFadeOut,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChoiceChipRow(
+    options: List<Pair<Int, String>>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        options.forEach { (value, label) ->
+            val active = selected == value
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(38.dp)
+                    .pressable(scale = 0.94f) {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onSelect(value)
+                    }
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(
+                        if (active) {
+                            Brush.verticalGradient(
+                                listOf(lerp(OnSurface, Color.White, 0.12f), OnSurface),
+                            )
+                        } else {
+                            Brush.verticalGradient(
+                                listOf(lerp(SurfaceHigh, Color.White, 0.05f), SurfaceHigh),
+                            )
+                        },
+                    )
+                    .border(
+                        1.dp,
+                        if (active) {
+                            Color.White.copy(alpha = 0.14f)
+                        } else {
+                            Hairline.copy(alpha = 0.6f)
+                        },
+                        RoundedCornerShape(12.dp),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = label,
+                    fontFamily = DmSans,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 11.sp,
+                    color = if (active) Ink else OnSurfaceVariant,
+                )
             }
         }
     }

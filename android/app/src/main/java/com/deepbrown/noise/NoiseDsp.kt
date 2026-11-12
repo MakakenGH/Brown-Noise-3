@@ -43,7 +43,37 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
     private var sVol = 0.0
     private var sSwell = 0.0
     private var sWidth = 0.6
+    private var sAir = 0.0
+    private var sGrain = 0.0
     private val ks: Double
+
+    /* Parallel air layer: a high-passed white source mixed after the deep
+     * filters, so Air stays independent of Deepness. */
+    private val airHp = Sound.highPassCoeffs(Sound.AIR_HZ, Sound.AIR_Q, sampleRate)
+    private var az1L = 0.0
+    private var az2L = 0.0
+    private var az1R = 0.0
+    private var az2R = 0.0
+
+    /* Parallel grain layer: a Poisson impulse train through a band-pass. */
+    private val grainBp = Sound.bandPassCoeffs(Sound.GRAIN_F0, Sound.GRAIN_Q, sampleRate)
+    private var gz1L = 0.0
+    private var gz2L = 0.0
+    private var gz1R = 0.0
+    private var gz2R = 0.0
+    private var grainCountL = 0
+    private var grainCountR = 0
+    private var grainGain = 0.0
+    private var grainRng = 0
+
+    /* Slow organic drift: random targets with a long smoothing time. */
+    private var driftTarget = 0.0
+    private var driftValue = 0.0
+    private var driftPanTarget = 0.0
+    private var driftPan = 0.0
+    private var driftCountdown = 0
+    private var driftRng = 0
+    private val kDrift: Double
 
     private var phA = 0.0
     private var phB = 1.7
@@ -77,6 +107,8 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
     @Volatile private var sleepGain = 1.0
     private var master = 0.0
     private val ksMaster: Double
+    private var userFade = 1.0
+    @Volatile private var userFadeStep = 0.0
 
     private val scopeRing = FloatArray(SCOPE_RING)
     @Volatile private var scopePos = 0
@@ -85,6 +117,9 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         val seed = Random.nextInt()
         a = (seed xor -0x61c88647) or 1
         b = ((seed * 1664525 + 1013904223) xor -0x7a143589) or 1
+        grainRng = (seed xor 0x5f356495.toInt()) or 1
+        driftRng = (seed xor 0x2c1b3c6d.toInt()) or 1
+        kDrift = 1.0 - exp(-1.0 / (sampleRate * 2.5))
         p = exp(-twoPi * 10.0 / sampleRate)
         g = 0.5 * sqrt(1.0 - p * p) / sqrt(1.0 / 3.0)
         setHighpass()
@@ -92,6 +127,7 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         shelfSin = sin(twoPi * Sound.SHELF_HZ / sampleRate)
         ks = 1.0 - exp(-1.0 / (sampleRate * 0.05))
         ksMaster = 1.0 - exp(-1.0 / (sampleRate * 0.08))
+        userFadeStep = 1.0 / (sampleRate * 2.0)
     }
 
     fun setParams(params: DspParams) {
@@ -104,6 +140,16 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
 
     fun setSleepGain(value: Double) {
         sleepGain = value.coerceIn(0.0, 1.0)
+    }
+
+    /** Starts the gentle fade-in used when playback begins. */
+    fun resetUserFade() {
+        userFade = 0.0
+    }
+
+    fun setFadeIn(seconds: Int) {
+        val s = if (seconds <= 0) 0.08 else seconds.toDouble()
+        userFadeStep = 1.0 / (sampleRate * s)
     }
 
     private fun setHighpass() {
@@ -151,6 +197,13 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         c[19] = ((amp + 1.0) + (amp - 1.0) * s - k) / sa0
     }
 
+    private fun nextDriftUnit(): Double {
+        driftRng = driftRng xor (driftRng shl 13)
+        driftRng = driftRng xor (driftRng ushr 17)
+        driftRng = driftRng xor (driftRng shl 5)
+        return ((driftRng.toLong() and 0xFFFFFFFFL) + 1.0) / 4294967297.0
+    }
+
     /** Renders [frames] interleaved stereo frames into [out] (out.size >= frames * 2). */
     fun render(out: ShortArray, frames: Int) {
         require(out.size >= frames * 2)
@@ -168,6 +221,9 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         val tSwell = t.swellCents
         val tWidth = t.width
         val tColor = t.color
+        val tAir = t.air
+        val tGrain = t.texture
+        val tDrift = t.drift
 
         if (!ready) {
             sCut = tCut
@@ -176,10 +232,13 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
             sVol = tVol
             sSwell = tSwell
             sWidth = tWidth
+            sAir = tAir
+            sGrain = tGrain
             ready = true
         }
 
         val ks = this.ks
+        val kd = this.kDrift
         val p = this.p
         val g = this.g
         val c = this.c
@@ -194,6 +253,35 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         var sVol = this.sVol
         var sSwell = this.sSwell
         var sWidth = this.sWidth
+        var sAir = this.sAir
+        var sGrain = this.sGrain
+        var az1L = this.az1L
+        var az2L = this.az2L
+        var az1R = this.az1R
+        var az2R = this.az2R
+        var gz1L = this.gz1L
+        var gz2L = this.gz2L
+        var gz1R = this.gz1R
+        var gz2R = this.gz2R
+        var grainCountL = this.grainCountL
+        var grainCountR = this.grainCountR
+        var grainGain = this.grainGain
+        var grainRng = this.grainRng
+        var driftTarget = this.driftTarget
+        var driftValue = this.driftValue
+        var driftPanTarget = this.driftPanTarget
+        var driftPan = this.driftPan
+        var driftCountdown = this.driftCountdown
+        val ah0 = airHp[0]
+        val ah1 = airHp[1]
+        val ah2 = airHp[2]
+        val ah3 = airHp[3]
+        val ah4 = airHp[4]
+        val gb0 = grainBp[0]
+        val gb1 = grainBp[1]
+        val gb2 = grainBp[2]
+        val ga1 = grainBp[3]
+        val ga2 = grainBp[4]
         var phA = this.phA
         var phB = this.phB
         var n = this.n
@@ -216,6 +304,8 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         var master = this.master
         val masterTarget = this.masterTarget
         val blockSleep = this.sleepGain
+        var userFade = this.userFade
+        val userFadeStep = this.userFadeStep
         var pos = this.scopePos
 
         for (i in 0 until frames) {
@@ -225,13 +315,25 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
             sVol += ks * (tVol - sVol)
             sSwell += ks * (tSwell - sSwell)
             sWidth += ks * (tWidth - sWidth)
+            sAir += ks * (tAir - sAir)
+            sGrain += ks * (tGrain - sGrain)
+
+            if (--driftCountdown <= 0) {
+                driftTarget = nextDriftUnit() * 2.0 - 1.0
+                driftPanTarget = nextDriftUnit() * 2.0 - 1.0
+                driftCountdown = (sampleRate * (6.0 + 8.0 * nextDriftUnit())).toInt()
+            }
+            driftValue += kd * (driftTarget - driftValue)
+            driftPan += kd * (driftPanTarget - driftPan)
+
             phA += dA
             if (phA > twoPi) phA -= twoPi
             phB += dB
             if (phB > twoPi) phB -= twoPi
 
             if ((n++ and 7) == 0) {
-                val cents = sSwell * (0.65 * sin(phA) + 0.35 * sin(phB))
+                val cents = sSwell * (0.65 * sin(phA) + 0.35 * sin(phB)) +
+                    driftValue * tDrift * 200.0
                 setCoeffs(sCut + cents * LN2 / 1200.0, sShelf)
                 sInd = sWidth
                 sCor = sqrt(1.0 - sWidth * sWidth)
@@ -315,6 +417,63 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
 
             xL *= sMake
             xR *= sMake
+
+            // Air is a parallel high-passed white layer, added after the deep
+            // filters so it can restore detail that Deepness removed.
+            if (sAir > 0.001) {
+                val hpL = ah0 * wL + az1L
+                az1L = ah1 * wL - ah3 * hpL + az2L
+                az2L = ah2 * wL - ah4 * hpL
+                val hpR = ah0 * wR + az1R
+                az1R = ah1 * wR - ah3 * hpR + az2R
+                az2R = ah2 * wR - ah4 * hpR
+                val airGain = sAir * Sound.AIR_NORM
+                xL += hpL * airGain
+                xR += (sCor * hpL + sInd * hpR) * airGain
+            }
+
+            // Grain: Poisson-scheduled clicks through a band-pass. Density
+            // falls as texture rises, so the layer goes from dense velvet to
+            // distinct crackle; gain is density-compensated. Density and gain
+            // are recalculated only when a pulse is scheduled.
+            if (sGrain > 0.001) {
+                grainCountL--
+                var inL = 0.0
+                if (grainCountL <= 0) {
+                    val density = Sound.GRAIN_MAX_PPS *
+                        (Sound.GRAIN_MIN_PPS / Sound.GRAIN_MAX_PPS).pow(sGrain)
+                    grainGain = sGrain * Sound.GRAIN_NORM * sqrt(Sound.GRAIN_MAX_PPS / density)
+                    grainRng = grainRng xor (grainRng shl 13)
+                    grainRng = grainRng xor (grainRng ushr 17)
+                    grainRng = grainRng xor (grainRng shl 5)
+                    val u = ((grainRng.toLong() and 0xFFFFFFFFL) + 1.0) / 4294967297.0
+                    grainCountL = (-ln(u) / density * sampleRate).toInt().coerceAtLeast(1)
+                    inL = if ((grainRng ushr 8) and 1 == 0) 1.0 else -1.0
+                }
+                val gL = gb0 * inL + gz1L
+                gz1L = gb1 * inL - ga1 * gL + gz2L
+                gz2L = gb2 * inL - ga2 * gL
+
+                grainCountR--
+                var inR = 0.0
+                if (grainCountR <= 0) {
+                    val density = Sound.GRAIN_MAX_PPS *
+                        (Sound.GRAIN_MIN_PPS / Sound.GRAIN_MAX_PPS).pow(sGrain)
+                    grainGain = sGrain * Sound.GRAIN_NORM * sqrt(Sound.GRAIN_MAX_PPS / density)
+                    grainRng = grainRng xor (grainRng shl 13)
+                    grainRng = grainRng xor (grainRng ushr 17)
+                    grainRng = grainRng xor (grainRng shl 5)
+                    val u = ((grainRng.toLong() and 0xFFFFFFFFL) + 1.0) / 4294967297.0
+                    grainCountR = (-ln(u) / density * sampleRate).toInt().coerceAtLeast(1)
+                    inR = if ((grainRng ushr 8) and 1 == 0) 1.0 else -1.0
+                }
+                val gR = gb0 * inR + gz1R
+                gz1R = gb1 * inR - ga1 * gR + gz2R
+                gz2R = gb2 * inR - ga2 * gR
+
+                xL += gL * grainGain
+                xR += (sCor * gL + sInd * gR) * grainGain
+            }
             var m = if (xL < 0) -xL else xL
             if (m > 0.7) {
                 m = 0.7 + 0.3 * tanh((m - 0.7) / 0.3)
@@ -327,9 +486,12 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
             }
 
             master += ksMaster * (masterTarget - master)
+            if (userFade < 1.0) userFade = minOf(1.0, userFade + userFadeStep)
             val gain = master * blockSleep
-            val outL = xL * sVol * gain
-            val outR = xR * sVol * gain
+            val driftGain = 1.0 + driftValue * tDrift * 0.04
+            val pan = driftPan * tDrift * 0.06
+            val outL = xL * sVol * gain * driftGain * (1.0 - pan) * userFade
+            val outR = xR * sVol * gain * driftGain * (1.0 + pan) * userFade
 
             out[i * 2] = toPcm(outL)
             out[i * 2 + 1] = toPcm(outR)
@@ -349,6 +511,25 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         this.sVol = sVol
         this.sSwell = sSwell
         this.sWidth = sWidth
+        this.sAir = sAir
+        this.sGrain = sGrain
+        this.az1L = az1L
+        this.az2L = az2L
+        this.az1R = az1R
+        this.az2R = az2R
+        this.gz1L = gz1L
+        this.gz2L = gz2L
+        this.gz1R = gz1R
+        this.gz2R = gz2R
+        this.grainCountL = grainCountL
+        this.grainCountR = grainCountR
+        this.grainGain = grainGain
+        this.grainRng = grainRng
+        this.driftTarget = driftTarget
+        this.driftValue = driftValue
+        this.driftPanTarget = driftPanTarget
+        this.driftPan = driftPan
+        this.driftCountdown = driftCountdown
         this.phA = phA
         this.phB = phB
         this.n = n
@@ -369,6 +550,7 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         this.gy1R = gy1R
         this.gy2R = gy2R
         this.master = master
+        this.userFade = userFade
         this.scopePos = pos
     }
 

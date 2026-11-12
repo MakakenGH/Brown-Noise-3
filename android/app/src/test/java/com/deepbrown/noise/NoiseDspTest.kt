@@ -113,9 +113,145 @@ class NoiseDspTest {
     }
 
     @Test
+    fun airChangesHighFrequencyEnergy() {
+        fun renderAir(air: Float): Pair<Double, Double> {
+            val dsp = NoiseDsp(48000)
+            dsp.setParams(
+                Params(deep = 0.5f, volume = 1f, color = NoiseColor.WHITE, swell = 0f, air = air).toDsp(),
+            )
+            dsp.setMasterTarget(1.0)
+            dsp.setSleepGain(1.0)
+            val frames = 48_000
+            val out = ShortArray(frames * 2)
+            dsp.render(out, frames)
+            var sum = 0.0
+            var diff = 0.0
+            var count = 0
+            var previous = out[24_000] / 32768.0
+            for (i in 24_001 until frames) {
+                val value = out[i * 2] / 32768.0
+                sum += value * value
+                val d = value - previous
+                diff += d * d
+                previous = value
+                count++
+            }
+            return sqrt(sum / count) to diff / count
+        }
+
+        val (rmsHushed, hfHushed) = renderAir(0f)
+        val (rmsAiry, hfAiry) = renderAir(1f)
+
+        assertTrue("hushed RMS sane, got $rmsHushed", rmsHushed in 0.11..0.18)
+        assertTrue("airy RMS sane, got $rmsAiry", rmsAiry in 0.11..0.18)
+        assertTrue("airy should have more high-frequency energy", hfAiry > hfHushed)
+    }
+
+    @Test
+    fun textureAddsCrest() {
+        fun renderGrain(texture: Float): Triple<Double, Double, Double> {
+            val dsp = NoiseDsp(48000)
+            dsp.setParams(
+                Params(
+                    deep = 0.5f,
+                    volume = 1f,
+                    color = NoiseColor.BROWN,
+                    swell = 0f,
+                    texture = texture,
+                ).toDsp(),
+            )
+            dsp.setMasterTarget(1.0)
+            dsp.setSleepGain(1.0)
+            val frames = 96_000
+            val out = ShortArray(frames * 2)
+            dsp.render(out, frames)
+            var sum = 0.0
+            var count = 0
+            var peak = 0.0
+            var diff = 0.0
+            var previous = out[24_000] / 32768.0
+            for (i in 24_001 until frames) {
+                val value = out[i * 2] / 32768.0
+                sum += value * value
+                val d = value - previous
+                diff += d * d
+                previous = value
+                if (abs(value) > peak) peak = abs(value)
+                count++
+            }
+            val rms = sqrt(sum / count)
+            return Triple(peak / rms, diff / count, rms)
+        }
+
+        val (crestSmooth, hfSmooth, rmsSmooth) = renderGrain(0f)
+        val (crestGrainy, hfGrainy, rmsGrainy) = renderGrain(1f)
+
+        assertTrue("smooth RMS sane, got $rmsSmooth", rmsSmooth in 0.11..0.18)
+        assertTrue("grainy RMS sane, got $rmsGrainy", rmsGrainy in 0.11..0.18)
+        assertTrue("grain should raise the crest factor", crestGrainy > crestSmooth)
+        assertTrue("grain should add high-frequency energy", hfGrainy > hfSmooth)
+    }
+
+    @Test
+    fun driftStaysBounded() {
+        val dsp = NoiseDsp(48000)
+        dsp.setParams(
+            Params(deep = 0.5f, volume = 1f, color = NoiseColor.BROWN, drift = 1f).toDsp(),
+        )
+        dsp.setMasterTarget(1.0)
+        dsp.setSleepGain(1.0)
+        val frames = 480_000
+        val out = ShortArray(frames * 2)
+        dsp.render(out, frames)
+
+        var sum = 0.0
+        var count = 0
+        var peak = 0
+        for (i in 24_000 until frames) {
+            val l = out[i * 2] / 32768.0
+            val r = out[i * 2 + 1] / 32768.0
+            sum += (l * l + r * r) / 2.0
+            peak = max(peak, max(abs(out[i * 2].toInt()), abs(out[i * 2 + 1].toInt())))
+            count++
+        }
+        val rms = sqrt(sum / count)
+        assertTrue("drift RMS sane, got $rms", rms in 0.11..0.18)
+        assertTrue("drift clipped, peak=$peak", peak < 32767)
+    }
+
+    @Test
+    fun fadeInStartsQuietly() {
+        val dsp = NoiseDsp(48000)
+        dsp.setParams(Params(deep = 0.5f, volume = 1f, swell = 0f).toDsp())
+        dsp.setFadeIn(2)
+        dsp.resetUserFade()
+        dsp.setMasterTarget(1.0)
+        dsp.setSleepGain(1.0)
+        val frames = 120_000
+        val out = ShortArray(frames * 2)
+        dsp.render(out, frames)
+
+        fun rms(from: Int, to: Int): Double {
+            var sum = 0.0
+            var count = 0
+            for (i in from until to) {
+                val value = out[i * 2] / 32768.0
+                sum += value * value
+                count++
+            }
+            return sqrt(sum / count)
+        }
+
+        val early = rms(4_800, 9_600)       // ~0.1–0.2 s
+        val late = rms(100_000, 115_000)    // ~2.1–2.4 s
+        assertTrue("fade-in should start quieter, early=$early late=$late", early < late)
+        assertTrue("fade-in should reach a normal level, got $late", late in 0.11..0.18)
+    }
+
+    @Test
     fun extremeSettingsStayFinite() {
         val dsp = NoiseDsp(48000)
-        dsp.setParams(Params(deep = 1f, rumble = 1f, width = 0f, swell = 1f, volume = 1f).toDsp())
+        dsp.setParams(Params(deep = 1f, rumble = 1f, width = 0f, swell = 1f, volume = 1f, air = 1f, texture = 1f, drift = 1f).toDsp())
         dsp.setMasterTarget(1.0)
         val out = ShortArray(4800 * 2)
         dsp.render(out, 4800)
