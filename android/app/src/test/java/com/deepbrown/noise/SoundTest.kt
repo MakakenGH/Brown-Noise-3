@@ -32,7 +32,9 @@ class SoundTest {
             assertEquals(preset.rumble, draft.rumble, 0f)
             assertEquals(preset.width, draft.width, 0f)
             assertEquals(preset.swell, draft.swell, 0f)
-            assertEquals(preset.texture, draft.texture, 0f)
+            assertEquals(preset.rain, draft.rain, 0f)
+            assertEquals(preset.drops, draft.drops, 0f)
+            assertEquals(preset.plink, draft.plink, 0f)
             assertEquals(preset.air, draft.air, 0f)
             assertEquals(preset.drift, draft.drift, 0f)
         }
@@ -46,10 +48,27 @@ class SoundTest {
             assertTrue("rumble ${draft.rumble}", draft.rumble in 0.05f..0.55f)
             assertTrue("width ${draft.width}", draft.width in 0.25f..0.95f)
             assertTrue("swell ${draft.swell}", draft.swell in 0f..0.4f)
-            assertTrue("texture ${draft.texture}", draft.texture in 0f..0.6f)
+            assertTrue("rain ${draft.rain}", draft.rain in 0f..0.6f)
+            assertTrue("drops ${draft.drops}", draft.drops in 0.3f..0.9f)
+            assertTrue("plink ${draft.plink}", draft.plink in 0f..0.4f)
             assertTrue("air ${draft.air}", draft.air in 0.25f..0.75f)
             assertTrue("drift ${draft.drift}", draft.drift in 0f..0.35f)
         }
+    }
+
+    @Test
+    fun rainMappings() {
+        assertEquals(6.0, Sound.rainDensity(0f, 1f), 0.01)
+        assertEquals(90.0, Sound.rainDensity(1f, 1f), 0.01)
+        assertEquals(0.0, Sound.rainDensity(0.7f, 0f), 0.01)
+        assertEquals(1200.0, Sound.rainBedHz(0f), 1.0)
+        assertEquals(190.0, Sound.rainBedHz(1f), 1.0)
+        assertTrue(Sound.rainDensity(0.5f, 1f) > Sound.rainDensity(0.2f, 1f))
+        assertTrue(Sound.rainBedHz(0.5f) < Sound.rainBedHz(0.2f))
+        assertEquals(0.0, Sound.rainBedGain(0f, 0.6f), 1e-9)
+        assertEquals(0.0, Sound.rainDropGain(0f, 1f), 1e-9)
+        assertEquals(0.0, Sound.plinkRate(0f, 1f), 1e-9)
+        assertTrue(Sound.plinkRate(1f, 1f) > Sound.plinkRate(0.2f, 1f))
     }
 
     @Test
@@ -63,12 +82,16 @@ class SoundTest {
             width = 0.6f,
             swell = 0.1f,
         )
-        assertEquals(0f, sound.texture, 0f)
+        assertEquals(0f, sound.rain, 0f)
+        assertEquals(0.6f, sound.drops, 0f)
+        assertEquals(0.1f, sound.plink, 0f)
         assertEquals(0f, sound.air, 0f)
         assertEquals(0f, sound.drift, 0f)
 
         val params = sound.params(0.5f)
-        assertEquals(0f, params.texture, 0f)
+        assertEquals(0f, params.rain, 0f)
+        assertEquals(0.6f, params.drops, 0f)
+        assertEquals(0.1f, params.plink, 0f)
         assertEquals(0f, params.air, 0f)
         assertEquals(0f, params.drift, 0f)
     }

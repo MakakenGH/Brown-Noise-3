@@ -17,6 +17,12 @@ class SoundStore(context: Context) {
                 for (i in 0 until array.length()) {
                     val o = array.optJSONObject(i) ?: continue
                     val id = o.optString("id").takeIf { it.isNotBlank() } ?: continue
+                    val rain = o.optDouble("rain", o.optDouble("texture", 0.0))
+                        .toFloat().coerceIn(0f, 1f)
+                    val drops = o.optDouble("drops", if (rain > 0f) 0.6 else 0.0)
+                        .toFloat().coerceIn(0f, 1f)
+                    val plink = o.optDouble("plink", if (rain > 0f) 0.1 else 0.0)
+                        .toFloat().coerceIn(0f, 1f)
                     add(
                         SavedSound(
                             id = id,
@@ -26,7 +32,9 @@ class SoundStore(context: Context) {
                             rumble = o.optDouble("rumble", 0.35).toFloat().coerceIn(0f, 1f),
                             width = o.optDouble("width", 0.6).toFloat().coerceIn(0f, 1f),
                             swell = o.optDouble("swell", 0.1).toFloat().coerceIn(0f, 1f),
-                            texture = o.optDouble("texture", 0.0).toFloat().coerceIn(0f, 1f),
+                            rain = rain,
+                            drops = drops,
+                            plink = plink,
                             air = o.optDouble("air", 0.0).toFloat().coerceIn(0f, 1f),
                             drift = o.optDouble("drift", 0.0).toFloat().coerceIn(0f, 1f),
                         ),
@@ -50,7 +58,9 @@ class SoundStore(context: Context) {
                     .put("rumble", s.rumble.toDouble())
                     .put("width", s.width.toDouble())
                     .put("swell", s.swell.toDouble())
-                    .put("texture", s.texture.toDouble())
+                    .put("rain", s.rain.toDouble())
+                    .put("drops", s.drops.toDouble())
+                    .put("plink", s.plink.toDouble())
                     .put("air", s.air.toDouble())
                     .put("drift", s.drift.toDouble()),
             )

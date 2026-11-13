@@ -1,6 +1,7 @@
 package com.deepbrown.noise
 
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.ln
@@ -44,7 +45,9 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
     private var sSwell = 0.0
     private var sWidth = 0.6
     private var sAir = 0.0
-    private var sGrain = 0.0
+    private var sRain = 0.0
+    private var sDrops = 0.0
+    private var sPlink = 0.0
     private val ks: Double
 
     /* Parallel air layer: a high-passed white source mixed after the deep
@@ -55,16 +58,60 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
     private var az1R = 0.0
     private var az2R = 0.0
 
-    /* Parallel grain layer: a Poisson impulse train through a band-pass. */
-    private val grainBp = Sound.bandPassCoeffs(Sound.GRAIN_F0, Sound.GRAIN_Q, sampleRate)
-    private var gz1L = 0.0
-    private var gz2L = 0.0
-    private var gz1R = 0.0
-    private var gz2R = 0.0
-    private var grainCountL = 0
-    private var grainCountR = 0
-    private var grainGain = 0.0
-    private var grainRng = 0
+    /* Rain bed: a pink source through a time-varying high-pass and a fixed
+     * low-pass, per channel. */
+    private val rainBedHp = DoubleArray(5)
+    private val rainBedLp = Sound.lowPassCoeffs(Sound.RAIN_BED_LP_HZ, qButter, sampleRate)
+    private var lastRainBedHz = 0.0
+    private var rhp1L = 0.0
+    private var rhp2L = 0.0
+    private var rhp1R = 0.0
+    private var rhp2R = 0.0
+    private var rlp1L = 0.0
+    private var rlp2L = 0.0
+    private var rlp1R = 0.0
+    private var rlp2R = 0.0
+    private var rpk0L = 0.0
+    private var rpk1L = 0.0
+    private var rpk2L = 0.0
+    private var rpk0R = 0.0
+    private var rpk1R = 0.0
+    private var rpk2R = 0.0
+
+    /* Rain drops: fixed bands and short noise-burst voices. */
+    private val rainBands = Array(Sound.RAIN_BANDS_HZ.size) {
+        Sound.bandPassCoeffs(Sound.RAIN_BANDS_HZ[it], Sound.RAIN_DROP_Q, sampleRate)
+    }
+    private val rainBandZ = DoubleArray(Sound.RAIN_BANDS_HZ.size * 4)
+    private val rainBandInL = DoubleArray(Sound.RAIN_BANDS_HZ.size)
+    private val rainBandInR = DoubleArray(Sound.RAIN_BANDS_HZ.size)
+    private val rainVoiceEnv = DoubleArray(Sound.RAIN_VOICES)
+    private val rainVoiceDecay = DoubleArray(Sound.RAIN_VOICES)
+    private val rainVoiceBand = IntArray(Sound.RAIN_VOICES)
+    private val rainVoicePanL = DoubleArray(Sound.RAIN_VOICES)
+    private val rainVoicePanR = DoubleArray(Sound.RAIN_VOICES)
+    private var rainVoiceNext = 0
+    private var rainDropCountdown = 0
+    private var rainRng = 0
+    private var rainA = 0
+    private var rainB = 0
+
+    /* Rising-pitch bubble plinks. */
+    private val plinkEnv = DoubleArray(Sound.PLINK_VOICES)
+    private val plinkPhase = DoubleArray(Sound.PLINK_VOICES)
+    private val plinkInc = DoubleArray(Sound.PLINK_VOICES)
+    private val plinkStep = DoubleArray(Sound.PLINK_VOICES)
+    private val plinkDecay = DoubleArray(Sound.PLINK_VOICES)
+    private val plinkPanL = DoubleArray(Sound.PLINK_VOICES)
+    private val plinkPanR = DoubleArray(Sound.PLINK_VOICES)
+    private var plinkNext = 0
+    private var plinkCountdown = 0
+
+    /* Slow gust on the rain bed. */
+    private var rainGust = 1.0
+    private var rainGustTarget = 1.0
+    private var rainGustCountdown = 0
+    private val kGust: Double
 
     /* Slow organic drift: random targets with a long smoothing time. */
     private var driftTarget = 0.0
@@ -117,9 +164,12 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         val seed = Random.nextInt()
         a = (seed xor -0x61c88647) or 1
         b = ((seed * 1664525 + 1013904223) xor -0x7a143589) or 1
-        grainRng = (seed xor 0x5f356495.toInt()) or 1
+        rainRng = (seed xor 0x5f356495.toInt()) or 1
+        rainA = ((seed * 22695477 + 1) xor 0x3c6ef372) or 1
+        rainB = ((seed * 1103515245 + 12345) xor 0x2b7e1516) or 1
         driftRng = (seed xor 0x2c1b3c6d.toInt()) or 1
         kDrift = 1.0 - exp(-1.0 / (sampleRate * 2.5))
+        kGust = 1.0 - exp(-1.0 / (sampleRate * 4.0))
         p = exp(-twoPi * 10.0 / sampleRate)
         g = 0.5 * sqrt(1.0 - p * p) / sqrt(1.0 / 3.0)
         setHighpass()
@@ -204,6 +254,18 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         return ((driftRng.toLong() and 0xFFFFFFFFL) + 1.0) / 4294967297.0
     }
 
+    private fun nextRainUnit(): Double {
+        rainRng = rainRng xor (rainRng shl 13)
+        rainRng = rainRng xor (rainRng ushr 17)
+        rainRng = rainRng xor (rainRng shl 5)
+        return ((rainRng.toLong() and 0xFFFFFFFFL) + 1.0) / 4294967297.0
+    }
+
+    private fun setRainBedCoeffs(hz: Double) {
+        Sound.highPassCoeffsInto(rainBedHp, hz.coerceIn(50.0, 2000.0), qButter, sampleRate)
+        lastRainBedHz = hz
+    }
+
     /** Renders [frames] interleaved stereo frames into [out] (out.size >= frames * 2). */
     fun render(out: ShortArray, frames: Int) {
         require(out.size >= frames * 2)
@@ -222,7 +284,9 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         val tWidth = t.width
         val tColor = t.color
         val tAir = t.air
-        val tGrain = t.texture
+        val tRain = t.rain
+        val tDrops = t.drops
+        val tPlink = t.plink
         val tDrift = t.drift
 
         if (!ready) {
@@ -233,7 +297,9 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
             sSwell = tSwell
             sWidth = tWidth
             sAir = tAir
-            sGrain = tGrain
+            sRain = tRain
+            sDrops = tDrops
+            sPlink = tPlink
             ready = true
         }
 
@@ -245,6 +311,8 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         val z = this.z
         var a = this.a
         var b = this.b
+        var rainA = this.rainA
+        var rainB = this.rainB
         var yL = this.yL
         var yR = this.yR
         var sCut = this.sCut
@@ -254,19 +322,30 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         var sSwell = this.sSwell
         var sWidth = this.sWidth
         var sAir = this.sAir
-        var sGrain = this.sGrain
+        var sRain = this.sRain
+        var sDrops = this.sDrops
+        var sPlink = this.sPlink
         var az1L = this.az1L
         var az2L = this.az2L
         var az1R = this.az1R
         var az2R = this.az2R
-        var gz1L = this.gz1L
-        var gz2L = this.gz2L
-        var gz1R = this.gz1R
-        var gz2R = this.gz2R
-        var grainCountL = this.grainCountL
-        var grainCountR = this.grainCountR
-        var grainGain = this.grainGain
-        var grainRng = this.grainRng
+        var rainDropCountdown = this.rainDropCountdown
+        var rainVoiceNext = this.rainVoiceNext
+        var rainGust = this.rainGust
+        var rainGustTarget = this.rainGustTarget
+        var rainGustCountdown = this.rainGustCountdown
+        var plinkNext = this.plinkNext
+        var plinkCountdown = this.plinkCountdown
+        var rh0 = rainBedHp[0]
+        var rh1 = rainBedHp[1]
+        var rh2 = rainBedHp[2]
+        var rh3 = rainBedHp[3]
+        var rh4 = rainBedHp[4]
+        val rl0 = rainBedLp[0]
+        val rl1 = rainBedLp[1]
+        val rl2 = rainBedLp[2]
+        val rl3 = rainBedLp[3]
+        val rl4 = rainBedLp[4]
         var driftTarget = this.driftTarget
         var driftValue = this.driftValue
         var driftPanTarget = this.driftPanTarget
@@ -277,11 +356,6 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         val ah2 = airHp[2]
         val ah3 = airHp[3]
         val ah4 = airHp[4]
-        val gb0 = grainBp[0]
-        val gb1 = grainBp[1]
-        val gb2 = grainBp[2]
-        val ga1 = grainBp[3]
-        val ga2 = grainBp[4]
         var phA = this.phA
         var phB = this.phB
         var n = this.n
@@ -316,7 +390,9 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
             sSwell += ks * (tSwell - sSwell)
             sWidth += ks * (tWidth - sWidth)
             sAir += ks * (tAir - sAir)
-            sGrain += ks * (tGrain - sGrain)
+            sRain += ks * (tRain - sRain)
+            sDrops += ks * (tDrops - sDrops)
+            sPlink += ks * (tPlink - sPlink)
 
             if (--driftCountdown <= 0) {
                 driftTarget = nextDriftUnit() * 2.0 - 1.0
@@ -337,6 +413,18 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
                 setCoeffs(sCut + cents * LN2 / 1200.0, sShelf)
                 sInd = sWidth
                 sCor = sqrt(1.0 - sWidth * sWidth)
+
+                if (sRain > 0.001) {
+                    val hz = Sound.rainBedHz(sRain.toFloat())
+                    if (abs(hz - lastRainBedHz) > 0.5) {
+                        setRainBedCoeffs(hz)
+                        rh0 = rainBedHp[0]
+                        rh1 = rainBedHp[1]
+                        rh2 = rainBedHp[2]
+                        rh3 = rainBedHp[3]
+                        rh4 = rainBedHp[4]
+                    }
+                }
             }
 
             // xorshift32 -> one uniform white sample per channel
@@ -348,6 +436,17 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
             b = b xor (b shl 5)
             val wL = (a.toLong() and 0xFFFFFFFFL) / 2147483648.0 - 1.0
             val wR = (b.toLong() and 0xFFFFFFFFL) / 2147483648.0 - 1.0
+
+            // Rain uses its own white source so it adds to the body instead of
+            // phase-cancelling it.
+            rainA = rainA xor (rainA shl 13)
+            rainA = rainA xor (rainA ushr 17)
+            rainA = rainA xor (rainA shl 5)
+            rainB = rainB xor (rainB shl 13)
+            rainB = rainB xor (rainB ushr 17)
+            rainB = rainB xor (rainB shl 5)
+            val rwL = (rainA.toLong() and 0xFFFFFFFFL) / 2147483648.0 - 1.0
+            val rwR = (rainB.toLong() and 0xFFFFFFFFL) / 2147483648.0 - 1.0
 
             // Colour source. All sources are normalised to roughly 0.5 RMS
             // (white is 0.577) so the loudness model can keep levels even.
@@ -432,47 +531,153 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
                 xR += (sCor * hpL + sInd * hpR) * airGain
             }
 
-            // Grain: Poisson-scheduled clicks through a band-pass. Density
-            // falls as texture rises, so the layer goes from dense velvet to
-            // distinct crackle; gain is density-compensated. Density and gain
-            // are recalculated only when a pulse is scheduled.
-            if (sGrain > 0.001) {
-                grainCountL--
-                var inL = 0.0
-                if (grainCountL <= 0) {
-                    val density = Sound.GRAIN_MAX_PPS *
-                        (Sound.GRAIN_MIN_PPS / Sound.GRAIN_MAX_PPS).pow(sGrain)
-                    grainGain = sGrain * Sound.GRAIN_NORM * sqrt(Sound.GRAIN_MAX_PPS / density)
-                    grainRng = grainRng xor (grainRng shl 13)
-                    grainRng = grainRng xor (grainRng ushr 17)
-                    grainRng = grainRng xor (grainRng shl 5)
-                    val u = ((grainRng.toLong() and 0xFFFFFFFFL) + 1.0) / 4294967297.0
-                    grainCountL = (-ln(u) / density * sampleRate).toInt().coerceAtLeast(1)
-                    inL = if ((grainRng ushr 8) and 1 == 0) 1.0 else -1.0
-                }
-                val gL = gb0 * inL + gz1L
-                gz1L = gb1 * inL - ga1 * gL + gz2L
-                gz2L = gb2 * inL - ga2 * gL
+            // Rain: a pink bed, short drop bursts and occasional plinks.
+            if (sRain > 0.001) {
+                // Dedicated pink filter so the bed is rain-like rather than flat
+                // white hiss, and independent of the main body.
+                rpk0L = 0.99765 * rpk0L + rwL * 0.0990460
+                rpk1L = 0.96300 * rpk1L + rwL * 0.2965164
+                rpk2L = 0.57000 * rpk2L + rwL * 1.0526913
+                rpk0R = 0.99765 * rpk0R + rwR * 0.0990460
+                rpk1R = 0.96300 * rpk1R + rwR * 0.2965164
+                rpk2R = 0.57000 * rpk2R + rwR * 1.0526913
+                val pinkL = (rpk0L + rpk1L + rpk2L + rwL * 0.1848) * Sound.PINK_GAIN
+                val pinkR = (rpk0R + rpk1R + rpk2R + rwR * 0.1848) * Sound.PINK_GAIN
 
-                grainCountR--
-                var inR = 0.0
-                if (grainCountR <= 0) {
-                    val density = Sound.GRAIN_MAX_PPS *
-                        (Sound.GRAIN_MIN_PPS / Sound.GRAIN_MAX_PPS).pow(sGrain)
-                    grainGain = sGrain * Sound.GRAIN_NORM * sqrt(Sound.GRAIN_MAX_PPS / density)
-                    grainRng = grainRng xor (grainRng shl 13)
-                    grainRng = grainRng xor (grainRng ushr 17)
-                    grainRng = grainRng xor (grainRng shl 5)
-                    val u = ((grainRng.toLong() and 0xFFFFFFFFL) + 1.0) / 4294967297.0
-                    grainCountR = (-ln(u) / density * sampleRate).toInt().coerceAtLeast(1)
-                    inR = if ((grainRng ushr 8) and 1 == 0) 1.0 else -1.0
-                }
-                val gR = gb0 * inR + gz1R
-                gz1R = gb1 * inR - ga1 * gR + gz2R
-                gz2R = gb2 * inR - ga2 * gR
+                var dropL = 0.0
+                var dropR = 0.0
+                if (sDrops > 0.001) {
+                    rainDropCountdown--
+                    if (rainDropCountdown <= 0) {
+                        val density = Sound.rainDensity(sRain.toFloat(), sDrops.toFloat())
+                        rainDropCountdown = (-ln(nextRainUnit()) / density * sampleRate)
+                            .toInt().coerceAtLeast(1)
 
-                xL += gL * grainGain
-                xR += (sCor * gL + sInd * gR) * grainGain
+                        val v = rainVoiceNext
+                        rainVoiceNext = (rainVoiceNext + 1) % Sound.RAIN_VOICES
+                        val ampU = nextRainUnit()
+                        rainVoiceEnv[v] = ampU.pow(2.5) *
+                            Sound.rainDropGain(sRain.toFloat(), sDrops.toFloat())
+                        val dur = 0.002 + 0.003 * nextRainUnit()
+                        rainVoiceDecay[v] = exp(-1.0 / (sampleRate * dur))
+                        val maxBand = (2 + (sRain * 3).toInt())
+                            .coerceIn(2, Sound.RAIN_BANDS_HZ.size - 1)
+                        rainVoiceBand[v] = (nextRainUnit() * (maxBand + 1))
+                            .toInt().coerceIn(0, maxBand)
+                        val pan = nextRainUnit() * 2.0 - 1.0
+                        rainVoicePanL[v] = sqrt(0.5 * (1.0 - pan))
+                        rainVoicePanR[v] = sqrt(0.5 * (1.0 + pan))
+                    }
+
+                    for (b in Sound.RAIN_BANDS_HZ.indices) {
+                        rainBandInL[b] = 0.0
+                        rainBandInR[b] = 0.0
+                    }
+                    for (v in 0 until Sound.RAIN_VOICES) {
+                        val e = rainVoiceEnv[v]
+                        if (e > 1e-5) {
+                            rainVoiceEnv[v] = e * rainVoiceDecay[v]
+                            val b = rainVoiceBand[v]
+                            rainBandInL[b] += rwL * e * rainVoicePanL[v]
+                            rainBandInR[b] += rwR * e * rainVoicePanR[v]
+                        }
+                    }
+
+                    for (b in Sound.RAIN_BANDS_HZ.indices) {
+                        val band = rainBands[b]
+                        val inL = rainBandInL[b]
+                        val inR = rainBandInR[b]
+                        val zi = b * 4
+                        val yL = band[0] * inL + rainBandZ[zi]
+                        rainBandZ[zi] = band[1] * inL - band[3] * yL + rainBandZ[zi + 1]
+                        rainBandZ[zi + 1] = band[2] * inL - band[4] * yL
+                        val yR = band[0] * inR + rainBandZ[zi + 2]
+                        rainBandZ[zi + 2] = band[1] * inR - band[3] * yR + rainBandZ[zi + 3]
+                        rainBandZ[zi + 3] = band[2] * inR - band[4] * yR
+                        dropL += yL
+                        dropR += yR
+                    }
+                }
+
+                var plinkL = 0.0
+                var plinkR = 0.0
+                if (sPlink > 0.001) {
+                    plinkCountdown--
+                    if (plinkCountdown <= 0) {
+                        val rate = Sound.plinkRate(sRain.toFloat(), sPlink.toFloat())
+                        if (rate > 0.0) {
+                            plinkCountdown = (-ln(nextRainUnit()) / rate * sampleRate)
+                                .toInt().coerceAtLeast(1)
+                            val v = plinkNext
+                            plinkNext = (plinkNext + 1) % Sound.PLINK_VOICES
+                            val u = nextRainUnit()
+                            val f0 = Sound.PLINK_F0_MIN *
+                                (Sound.PLINK_F0_MAX / Sound.PLINK_F0_MIN).pow(u)
+                            val rise = Sound.PLINK_RISE_MIN +
+                                (Sound.PLINK_RISE_MAX - Sound.PLINK_RISE_MIN) * nextRainUnit()
+                            val dur = Sound.PLINK_DURATION_MIN +
+                                (Sound.PLINK_DURATION_MAX - Sound.PLINK_DURATION_MIN) * nextRainUnit()
+                            val inc0 = twoPi * f0 / sampleRate
+                            val inc1 = twoPi * (f0 * rise) / sampleRate
+                            plinkPhase[v] = 0.0
+                            plinkInc[v] = inc0
+                            plinkStep[v] = (inc1 - inc0) / (sampleRate * dur)
+                            plinkDecay[v] = exp(-1.0 / (sampleRate * dur))
+                            plinkEnv[v] = Sound.PLINK_NORM * sPlink *
+                                (0.35 + 0.65 * sRain) *
+                                (0.4 + 0.6 * u) * (0.5 + 0.5 * nextRainUnit())
+                            val pan = nextRainUnit() * 2.0 - 1.0
+                            plinkPanL[v] = sqrt(0.5 * (1.0 - pan))
+                            plinkPanR[v] = sqrt(0.5 * (1.0 + pan))
+                        } else {
+                            plinkCountdown = sampleRate
+                        }
+                    }
+
+                    for (p in 0 until Sound.PLINK_VOICES) {
+                        val e = plinkEnv[p]
+                        if (e > 1e-5) {
+                            val y = e * sin(plinkPhase[p])
+                            var ph = plinkPhase[p] + plinkInc[p]
+                            if (ph > twoPi) ph -= twoPi
+                            plinkPhase[p] = ph
+                            plinkInc[p] += plinkStep[p]
+                            plinkEnv[p] = e * plinkDecay[p]
+                            plinkL += y * plinkPanL[p]
+                            plinkR += y * plinkPanR[p]
+                        }
+                    }
+                }
+
+                // Bed: pink through high-pass/low-pass, with a slow gust.
+                val hpL = rh0 * pinkL + rhp1L
+                rhp1L = rh1 * pinkL - rh3 * hpL + rhp2L
+                rhp2L = rh2 * pinkL - rh4 * hpL
+                val hpR = rh0 * pinkR + rhp1R
+                rhp1R = rh1 * pinkR - rh3 * hpR + rhp2R
+                rhp2R = rh2 * pinkR - rh4 * hpR
+
+                val bedL = rl0 * hpL + rlp1L
+                rlp1L = rl1 * hpL - rl3 * bedL + rlp2L
+                rlp2L = rl2 * hpL - rl4 * bedL
+                val bedR = rl0 * hpR + rlp1R
+                rlp1R = rl1 * hpR - rl3 * bedR + rlp2R
+                rlp2R = rl2 * hpR - rl4 * bedR
+
+                if (--rainGustCountdown <= 0) {
+                    val depth = 0.08 + 0.08 * sRain
+                    rainGustTarget = 1.0 + (nextRainUnit() * 2.0 - 1.0) * depth
+                    rainGustCountdown = (sampleRate * (5.0 + 4.0 * nextRainUnit())).toInt()
+                }
+                rainGust += kGust * (rainGustTarget - rainGust)
+
+                val bedGain = Sound.rainBedGain(sRain.toFloat(), sDrops.toFloat()) * rainGust
+                val rainL = bedL * bedGain + dropL + plinkL
+                val rainR = bedR * bedGain + dropR + plinkR
+                val mid = (rainL + rainR) * 0.5
+                val side = (rainL - rainR) * 0.5 * sWidth
+                xL += mid + side
+                xR += mid - side
             }
             var m = if (xL < 0) -xL else xL
             if (m > 0.7) {
@@ -503,6 +708,8 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
 
         this.a = a
         this.b = b
+        this.rainA = rainA
+        this.rainB = rainB
         this.yL = yL
         this.yR = yR
         this.sCut = sCut
@@ -512,19 +719,20 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         this.sSwell = sSwell
         this.sWidth = sWidth
         this.sAir = sAir
-        this.sGrain = sGrain
+        this.sRain = sRain
+        this.sDrops = sDrops
+        this.sPlink = sPlink
         this.az1L = az1L
         this.az2L = az2L
         this.az1R = az1R
         this.az2R = az2R
-        this.gz1L = gz1L
-        this.gz2L = gz2L
-        this.gz1R = gz1R
-        this.gz2R = gz2R
-        this.grainCountL = grainCountL
-        this.grainCountR = grainCountR
-        this.grainGain = grainGain
-        this.grainRng = grainRng
+        this.rainDropCountdown = rainDropCountdown
+        this.rainVoiceNext = rainVoiceNext
+        this.rainGust = rainGust
+        this.rainGustTarget = rainGustTarget
+        this.rainGustCountdown = rainGustCountdown
+        this.plinkNext = plinkNext
+        this.plinkCountdown = plinkCountdown
         this.driftTarget = driftTarget
         this.driftValue = driftValue
         this.driftPanTarget = driftPanTarget

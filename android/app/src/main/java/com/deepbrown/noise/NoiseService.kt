@@ -157,7 +157,9 @@ class NoiseService : Service() {
                         swell = intent.getFloatExtra(EXTRA_SWELL, params.swell),
                         volume = intent.getFloatExtra(EXTRA_VOLUME, params.volume),
                         color = NoiseColor.fromKey(intent.getStringExtra(EXTRA_COLOR)),
-                        texture = intent.getFloatExtra(EXTRA_TEXTURE, params.texture),
+                        rain = intent.getFloatExtra(EXTRA_RAIN, params.rain),
+                        drops = intent.getFloatExtra(EXTRA_DROPS, params.drops),
+                        plink = intent.getFloatExtra(EXTRA_PLINK, params.plink),
                         air = intent.getFloatExtra(EXTRA_AIR, params.air),
                         drift = intent.getFloatExtra(EXTRA_DRIFT, params.drift),
                     ).clamped()
@@ -462,6 +464,11 @@ class NoiseService : Service() {
     }
 
     private fun loadState() {
+        val rain = if (prefs.contains(KEY_RAIN)) {
+            prefs.getFloat(KEY_RAIN, 0f)
+        } else {
+            prefs.getFloat(KEY_TEXTURE_LEGACY, 0f)
+        }
         params = Params(
             deep = prefs.getFloat(KEY_DEEP, 0.50f),
             rumble = prefs.getFloat(KEY_RUMBLE, 0.35f),
@@ -469,7 +476,9 @@ class NoiseService : Service() {
             swell = prefs.getFloat(KEY_SWELL, 0.10f),
             volume = prefs.getFloat(KEY_VOLUME, 0.55f),
             color = NoiseColor.fromKey(prefs.getString(KEY_COLOR, null)),
-            texture = prefs.getFloat(KEY_TEXTURE, 0f),
+            rain = rain,
+            drops = prefs.getFloat(KEY_DROPS, if (rain > 0f) 0.6f else 0f),
+            plink = prefs.getFloat(KEY_PLINK, if (rain > 0f) 0.1f else 0f),
             air = prefs.getFloat(KEY_AIR, 0f),
             drift = prefs.getFloat(KEY_DRIFT, 0f),
         ).clamped()
@@ -488,7 +497,9 @@ class NoiseService : Service() {
             .putFloat(KEY_WIDTH, params.width)
             .putFloat(KEY_SWELL, params.swell)
             .putFloat(KEY_VOLUME, params.volume)
-            .putFloat(KEY_TEXTURE, params.texture)
+            .putFloat(KEY_RAIN, params.rain)
+            .putFloat(KEY_DROPS, params.drops)
+            .putFloat(KEY_PLINK, params.plink)
             .putFloat(KEY_AIR, params.air)
             .putFloat(KEY_DRIFT, params.drift)
             .putString(KEY_COLOR, params.color.name)
@@ -690,7 +701,9 @@ class NoiseService : Service() {
         const val EXTRA_SWELL = "swell"
         const val EXTRA_VOLUME = "volume"
         const val EXTRA_COLOR = "color"
-        const val EXTRA_TEXTURE = "texture"
+        const val EXTRA_RAIN = "rain"
+        const val EXTRA_DROPS = "drops"
+        const val EXTRA_PLINK = "plink"
         const val EXTRA_AIR = "air"
         const val EXTRA_DRIFT = "drift"
         const val EXTRA_NAME = "name"
@@ -705,7 +718,10 @@ class NoiseService : Service() {
         private const val KEY_WIDTH = "width"
         private const val KEY_SWELL = "swell"
         private const val KEY_VOLUME = "volume"
-        private const val KEY_TEXTURE = "texture"
+        private const val KEY_RAIN = "rain"
+        private const val KEY_DROPS = "drops"
+        private const val KEY_PLINK = "plink"
+        private const val KEY_TEXTURE_LEGACY = "texture"
         private const val KEY_AIR = "air"
         private const val KEY_DRIFT = "drift"
         private const val KEY_COLOR = "color"

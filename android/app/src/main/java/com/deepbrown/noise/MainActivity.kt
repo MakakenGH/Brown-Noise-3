@@ -142,7 +142,9 @@ class MainActivity : ComponentActivity() {
             .putExtra(NoiseService.EXTRA_SWELL, params.swell)
             .putExtra(NoiseService.EXTRA_VOLUME, params.volume)
             .putExtra(NoiseService.EXTRA_COLOR, params.color.name)
-            .putExtra(NoiseService.EXTRA_TEXTURE, params.texture)
+            .putExtra(NoiseService.EXTRA_RAIN, params.rain)
+            .putExtra(NoiseService.EXTRA_DROPS, params.drops)
+            .putExtra(NoiseService.EXTRA_PLINK, params.plink)
             .putExtra(NoiseService.EXTRA_AIR, params.air)
             .putExtra(NoiseService.EXTRA_DRIFT, params.drift)
             .putExtra(NoiseService.EXTRA_NAME, name)
@@ -228,7 +230,9 @@ class MainActivity : ComponentActivity() {
             rumble = draft.rumble,
             width = draft.width,
             swell = draft.swell,
-            texture = draft.texture,
+            rain = draft.rain,
+            drops = draft.drops,
+            plink = draft.plink,
             air = draft.air,
             drift = draft.drift,
         )

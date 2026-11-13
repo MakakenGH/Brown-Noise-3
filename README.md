@@ -1,19 +1,20 @@
 # Colors of Noise: noise generator (Android)
 
 A native Android app that generates white, brown, pink and green noise live on
-the device. Nothing is streamed or pre-recorded, so sounds never repeat and can
-be shaped while they play.
+the device, with a synthesized rain layer and a set of sound-shaping controls.
+Nothing is streamed or pre-recorded, so sounds never repeat and can be shaped
+while they play.
 
 ## What it does
 
 * Colors of Noise: tap White, Brown, Pink or Green to start a generic noise of
   that colour. It plays immediately and is not added to your collection.
 * My sounds: save your own sounds with a name, colour, deepness, rumble, air,
-  grain, width, swell and drift. Tap a saved sound to play or stop it; its
-  three-dot menu opens edit, rename and delete. Add a sound with the plus next
-  to the header. Hold a card and drag to reorder the collection.
-* Start from presets such as Still, Rain, Ocean, Fan, Night, Focus and
-  Crackle, or tap Surprise for a random starting point.
+  rain, drops, plink, width, swell and drift. Tap a saved sound to play or stop
+  it; its three-dot menu opens edit, rename and delete. Add a sound with the plus
+  next to the header. Hold a card and drag to reorder the collection.
+* Start from presets such as Drizzle, Rain, Downpour, Plinks, Still, Ocean, Fan,
+  Night and Focus, or tap Surprise for a random starting point.
 * A now-playing card above the bottom bar always shows the loaded sound and lets
   you play or pause it. Tap its body to open the sound in the editor.
 * Volume, a sleep timer (15 min, 30 min, 1 h, 2 h) and fades (a gentle start

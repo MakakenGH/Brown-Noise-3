@@ -17,7 +17,9 @@ data class Params(
     val swell: Float = 0.10f,
     val volume: Float = 0.55f,
     val color: NoiseColor = NoiseColor.BROWN,
-    val texture: Float = 0f,
+    val rain: Float = 0f,
+    val drops: Float = 0.6f,
+    val plink: Float = 0.1f,
     val air: Float = 0f,
     val drift: Float = 0f,
 ) {
@@ -28,7 +30,9 @@ data class Params(
         swell = swell.coerceIn(0f, 1f),
         volume = volume.coerceIn(0f, 1f),
         color = color,
-        texture = texture.coerceIn(0f, 1f),
+        rain = rain.coerceIn(0f, 1f),
+        drops = drops.coerceIn(0f, 1f),
+        plink = plink.coerceIn(0f, 1f),
         air = air.coerceIn(0f, 1f),
         drift = drift.coerceIn(0f, 1f),
     )
@@ -39,7 +43,9 @@ data class Params(
         "width" -> copy(width = value)
         "swell" -> copy(swell = value)
         "volume" -> copy(volume = value)
-        "texture" -> copy(texture = value)
+        "rain" -> copy(rain = value)
+        "drops" -> copy(drops = value)
+        "plink" -> copy(plink = value)
         "air" -> copy(air = value)
         "drift" -> copy(drift = value)
         else -> this
@@ -54,8 +60,10 @@ data class DspParams(
     val swellCents: Double,
     val volume: Double,
     val color: NoiseColor = NoiseColor.BROWN,
+    val rain: Double = 0.0,
+    val drops: Double = 0.6,
+    val plink: Double = 0.1,
     val air: Double = 0.0,
-    val texture: Double = 0.0,
     val drift: Double = 0.0,
 )
 
@@ -66,13 +74,27 @@ object Sound {
     const val AIR_Q = 0.707
     const val AIR_NORM = 0.05
 
-    /* Grain is a parallel sparse-noise layer: dense velvet noise at low
-     * texture, discrete clicks at high texture. */
-    const val GRAIN_MIN_PPS = 250.0
-    const val GRAIN_MAX_PPS = 2500.0
-    const val GRAIN_F0 = 2500.0
-    const val GRAIN_Q = 2.0
-    const val GRAIN_NORM = 0.5
+    /* Rain: a pink-noise bed plus short band-passed drops and occasional
+     * rising-pitch bubble plinks. */
+    const val RAIN_BED_HZ_LIGHT = 1200.0
+    const val RAIN_BED_HZ_HEAVY = 190.0
+    const val RAIN_BED_LP_HZ = 6_000.0
+    const val RAIN_BED_NORM = 0.14
+    const val RAIN_DROP_NORM = 0.18
+    const val RAIN_DROP_MIN_PER_SEC = 6.0
+    const val RAIN_DROP_MAX_PER_SEC = 90.0
+    const val RAIN_DROP_Q = 1.2
+    const val RAIN_VOICES = 8
+    val RAIN_BANDS_HZ = doubleArrayOf(700.0, 1100.0, 1700.0, 2600.0, 4000.0, 6000.0)
+
+    const val PLINK_VOICES = 3
+    const val PLINK_F0_MIN = 900.0
+    const val PLINK_F0_MAX = 2600.0
+    const val PLINK_RISE_MIN = 1.2
+    const val PLINK_RISE_MAX = 2.0
+    const val PLINK_DURATION_MIN = 0.010
+    const val PLINK_DURATION_MAX = 0.020
+    const val PLINK_NORM = 0.15
     const val HP_HZ = 18.0
     const val TARGET_RMS = 0.14
 
@@ -90,6 +112,39 @@ object Sound {
     fun shelfDb(rumble: Float): Double = rumble.toDouble() * 12.0
     fun swellCents(swell: Float): Double = swell.toDouble() * 700.0
     fun volumeGain(volume: Float): Double = volume.toDouble() * volume.toDouble()
+
+    /** Drops per second, scaled by the close-drop balance. */
+    fun rainDensity(rain: Float, drops: Float): Double {
+        val r = rain.coerceIn(0f, 1f).toDouble()
+        val d = drops.coerceIn(0f, 1f).toDouble()
+        return (RAIN_DROP_MIN_PER_SEC +
+            (RAIN_DROP_MAX_PER_SEC - RAIN_DROP_MIN_PER_SEC) * r.pow(1.3)) * d
+    }
+
+    /** The bed keeps more low end as the rain gets heavier. */
+    fun rainBedHz(rain: Float): Double {
+        val t = rain.coerceIn(0f, 1f).toDouble()
+        return RAIN_BED_HZ_LIGHT * (RAIN_BED_HZ_HEAVY / RAIN_BED_HZ_LIGHT).pow(t)
+    }
+
+    /** The bed drops away quickly at low intensity, and Drops can pull it back. */
+    fun rainBedGain(rain: Float, drops: Float): Double {
+        val r = rain.coerceIn(0f, 1f).toDouble()
+        val d = drops.coerceIn(0f, 1f).toDouble()
+        return r.pow(1.45) * (1.0 - 0.45 * d) * RAIN_BED_NORM
+    }
+
+    fun rainDropGain(rain: Float, drops: Float): Double {
+        val r = rain.coerceIn(0f, 1f).toDouble()
+        val d = drops.coerceIn(0f, 1f).toDouble()
+        return r.pow(0.7) * d.pow(0.7) * RAIN_DROP_NORM
+    }
+
+    /** Occasional water plinks per second. */
+    fun plinkRate(rain: Float, plink: Float): Double {
+        if (rain <= 0f || plink <= 0f) return 0.0
+        return 0.1 + 2.9 * rain.coerceIn(0f, 1f) * plink.coerceIn(0f, 1f)
+    }
 
     /** Smoothstep sleep fade: 1 outside the fade window, 0 at the timer end. */
     fun sleepGain(remainingMs: Long, fadeMs: Long): Double {
@@ -147,20 +202,40 @@ object Sound {
 
     /** RBJ high-pass coefficients for the parallel air layer. */
     fun highPassCoeffs(f0: Double, q: Double, fs: Int): DoubleArray {
+        val out = DoubleArray(5)
+        highPassCoeffsInto(out, f0, q, fs)
+        return out
+    }
+
+    /** Allocation-free high-pass coefficients for the audio thread. */
+    fun highPassCoeffsInto(out: DoubleArray, f0: Double, q: Double, fs: Int) {
+        val w0 = 2.0 * PI * f0 / fs
+        val alpha = sin(w0) / (2.0 * q)
+        val cs = cos(w0)
+        val a0 = 1.0 + alpha
+        out[0] = ((1.0 + cs) / 2.0) / a0
+        out[1] = -(1.0 + cs) / a0
+        out[2] = ((1.0 + cs) / 2.0) / a0
+        out[3] = (-2.0 * cs) / a0
+        out[4] = (1.0 - alpha) / a0
+    }
+
+    /** RBJ low-pass coefficients for the rain bed. */
+    fun lowPassCoeffs(f0: Double, q: Double, fs: Int): DoubleArray {
         val w0 = 2.0 * PI * f0 / fs
         val alpha = sin(w0) / (2.0 * q)
         val cs = cos(w0)
         val a0 = 1.0 + alpha
         return doubleArrayOf(
-            ((1.0 + cs) / 2.0) / a0,
-            -(1.0 + cs) / a0,
-            ((1.0 + cs) / 2.0) / a0,
+            ((1.0 - cs) / 2.0) / a0,
+            (1.0 - cs) / a0,
+            ((1.0 - cs) / 2.0) / a0,
             (-2.0 * cs) / a0,
             (1.0 - alpha) / a0,
         )
     }
 
-    /** RBJ constant-peak band-pass, used for the grain clicks. */
+    /** RBJ constant-peak band-pass, used for the rain drop bursts. */
     fun bandPassCoeffs(f0: Double, q: Double, fs: Int): DoubleArray {
         val w0 = 2.0 * PI * f0 / fs
         val alpha = sin(w0) / (2.0 * q)
@@ -244,8 +319,10 @@ fun Params.toDsp(): DspParams {
         swellCents = Sound.swellCents(swell),
         volume = Sound.volumeGain(volume),
         color = color,
+        rain = rain.toDouble(),
+        drops = drops.toDouble(),
+        plink = plink.toDouble(),
         air = air.toDouble(),
-        texture = texture.toDouble(),
         drift = drift.toDouble(),
     )
 }

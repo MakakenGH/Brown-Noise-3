@@ -223,13 +223,33 @@ fun EditorScreen(
                 }
                 ParameterCard {
                     ParameterRow(
-                        label = "Grain",
-                        value = draft.texture,
-                        description = "Smooth to crackling — adds rain and fire texture",
+                        label = "Rain",
+                        value = draft.rain,
+                        description = "Continuous wash — light drizzle to downpour",
                         accent = draft.color.dot,
-                        startLabel = "Smooth",
-                        endLabel = "Crackling",
-                        onChange = { update(draft.copy(texture = it)) },
+                        startLabel = "Light",
+                        endLabel = "Heavy",
+                        onChange = { update(draft.copy(rain = it)) },
+                    )
+                    HairlineDivider(startPadding = 18.dp)
+                    ParameterRow(
+                        label = "Drops",
+                        value = draft.drops,
+                        description = "Close droplets over the bed",
+                        accent = draft.color.dot,
+                        startLabel = "None",
+                        endLabel = "Many",
+                        onChange = { update(draft.copy(drops = it)) },
+                    )
+                    HairlineDivider(startPadding = 18.dp)
+                    ParameterRow(
+                        label = "Plink",
+                        value = draft.plink,
+                        description = "Occasional rising water bubbles",
+                        accent = draft.color.dot,
+                        startLabel = "None",
+                        endLabel = "Often",
+                        onChange = { update(draft.copy(plink = it)) },
                     )
                 }
                 ParameterCard {
