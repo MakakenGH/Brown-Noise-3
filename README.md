@@ -10,11 +10,12 @@ while they play.
 * Colors of Noise: tap White, Brown, Pink or Green to start a generic noise of
   that colour. It plays immediately and is not added to your collection.
 * My sounds: save your own sounds with a name, colour, deepness, rumble, air,
-  rain, drops, plink, width, swell and drift. Tap a saved sound to play or stop
-  it; its three-dot menu opens edit, rename and delete. Add a sound with the plus
-  next to the header. Hold a card and drag to reorder the collection.
-* Start from presets such as Drizzle, Rain, Downpour, Plinks, Still, Ocean, Fan,
-  Night and Focus, or tap Surprise for a random starting point.
+  wind, fan, rain, drops, plink, width, swell and drift. Tap a saved sound to
+  play or stop it; its three-dot menu opens edit, rename and delete. Add a sound
+  with the plus next to the header. Hold a card and drag to reorder the collection.
+* Start from presets such as Drizzle, Rain, Downpour, Plinks, Wind, Fan,
+  Aircon, Breeze, Still, Ocean, Night and Focus, or tap Surprise for a random
+  starting point.
 * A now-playing card above the bottom bar always shows the loaded sound and lets
   you play or pause it. Tap its body to open the sound in the editor.
 * Volume, a sleep timer (15 min, 30 min, 1 h, 2 h) and fades (a gentle start

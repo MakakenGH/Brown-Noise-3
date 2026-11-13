@@ -160,6 +160,8 @@ class NoiseService : Service() {
                         rain = intent.getFloatExtra(EXTRA_RAIN, params.rain),
                         drops = intent.getFloatExtra(EXTRA_DROPS, params.drops),
                         plink = intent.getFloatExtra(EXTRA_PLINK, params.plink),
+                        wind = intent.getFloatExtra(EXTRA_WIND, params.wind),
+                        fan = intent.getFloatExtra(EXTRA_FAN, params.fan),
                         air = intent.getFloatExtra(EXTRA_AIR, params.air),
                         drift = intent.getFloatExtra(EXTRA_DRIFT, params.drift),
                     ).clamped()
@@ -479,6 +481,8 @@ class NoiseService : Service() {
             rain = rain,
             drops = prefs.getFloat(KEY_DROPS, if (rain > 0f) 0.6f else 0f),
             plink = prefs.getFloat(KEY_PLINK, if (rain > 0f) 0.1f else 0f),
+            wind = prefs.getFloat(KEY_WIND, 0f),
+            fan = prefs.getFloat(KEY_FAN, 0f),
             air = prefs.getFloat(KEY_AIR, 0f),
             drift = prefs.getFloat(KEY_DRIFT, 0f),
         ).clamped()
@@ -500,6 +504,8 @@ class NoiseService : Service() {
             .putFloat(KEY_RAIN, params.rain)
             .putFloat(KEY_DROPS, params.drops)
             .putFloat(KEY_PLINK, params.plink)
+            .putFloat(KEY_WIND, params.wind)
+            .putFloat(KEY_FAN, params.fan)
             .putFloat(KEY_AIR, params.air)
             .putFloat(KEY_DRIFT, params.drift)
             .putString(KEY_COLOR, params.color.name)
@@ -704,6 +710,8 @@ class NoiseService : Service() {
         const val EXTRA_RAIN = "rain"
         const val EXTRA_DROPS = "drops"
         const val EXTRA_PLINK = "plink"
+        const val EXTRA_WIND = "wind"
+        const val EXTRA_FAN = "fan"
         const val EXTRA_AIR = "air"
         const val EXTRA_DRIFT = "drift"
         const val EXTRA_NAME = "name"
@@ -721,6 +729,8 @@ class NoiseService : Service() {
         private const val KEY_RAIN = "rain"
         private const val KEY_DROPS = "drops"
         private const val KEY_PLINK = "plink"
+        private const val KEY_WIND = "wind"
+        private const val KEY_FAN = "fan"
         private const val KEY_TEXTURE_LEGACY = "texture"
         private const val KEY_AIR = "air"
         private const val KEY_DRIFT = "drift"

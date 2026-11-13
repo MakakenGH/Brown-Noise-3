@@ -48,6 +48,8 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
     private var sRain = 0.0
     private var sDrops = 0.0
     private var sPlink = 0.0
+    private var sWind = 0.0
+    private var sFan = 0.0
     private val ks: Double
 
     /* Parallel air layer: a high-passed white source mixed after the deep
@@ -98,6 +100,8 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
 
     /* Rising-pitch bubble plinks. */
     private val plinkEnv = DoubleArray(Sound.PLINK_VOICES)
+    private val plinkAttackSamples = IntArray(Sound.PLINK_VOICES)
+    private val plinkAttackStep = DoubleArray(Sound.PLINK_VOICES)
     private val plinkPhase = DoubleArray(Sound.PLINK_VOICES)
     private val plinkInc = DoubleArray(Sound.PLINK_VOICES)
     private val plinkStep = DoubleArray(Sound.PLINK_VOICES)
@@ -112,6 +116,68 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
     private var rainGustTarget = 1.0
     private var rainGustCountdown = 0
     private val kGust: Double
+
+    /* Airflow: wind and fan share a dedicated pink source. */
+    private var airA = 0
+    private var airB = 0
+    private var airRng = 0
+    private var apk0L = 0.0
+    private var apk1L = 0.0
+    private var apk2L = 0.0
+    private var apk0R = 0.0
+    private var apk1R = 0.0
+    private var apk2R = 0.0
+
+    private val windHp = Sound.highPassCoeffs(Sound.WIND_HP_HZ, qButter, sampleRate)
+    private val windBandA = Sound.bandPassCoeffs(Sound.WIND_BAND_A_HZ, Sound.WIND_BAND_Q, sampleRate)
+    private val windBandB = Sound.bandPassCoeffs(Sound.WIND_BAND_B_HZ, Sound.WIND_BAND_Q, sampleRate)
+    private val windLp = Sound.lowPassCoeffs(Sound.WIND_LP_HZ, qButter, sampleRate)
+    private var whp1L = 0.0
+    private var whp2L = 0.0
+    private var whp1R = 0.0
+    private var whp2R = 0.0
+    private var wba1L = 0.0
+    private var wba2L = 0.0
+    private var wba1R = 0.0
+    private var wba2R = 0.0
+    private var wbb1L = 0.0
+    private var wbb2L = 0.0
+    private var wbb1R = 0.0
+    private var wbb2R = 0.0
+    private var wlp1L = 0.0
+    private var wlp2L = 0.0
+    private var wlp1R = 0.0
+    private var wlp2R = 0.0
+    private var windMove = 0.5
+    private var windMoveTarget = 0.5
+    private var windMoveCountdown = 0
+    private var windGust = 1.0
+    private var windGustTarget = 1.0
+    private var windGustCountdown = 0
+    private val kWindMove: Double
+    private val kWindGust: Double
+
+    private val fanHp = Sound.highPassCoeffs(Sound.FAN_HP_HZ, qButter, sampleRate)
+    private val fanLp = Sound.lowPassCoeffs(Sound.FAN_LP_HZ, qButter, sampleRate)
+    private val fanShelf = Sound.lowShelfCoeffs(
+        Sound.FAN_LOW_SHELF_HZ,
+        Sound.FAN_LOW_SHELF_DB,
+        sampleRate,
+    )
+    private var fhp1L = 0.0
+    private var fhp2L = 0.0
+    private var fhp1R = 0.0
+    private var fhp2R = 0.0
+    private var flp1L = 0.0
+    private var flp2L = 0.0
+    private var flp1R = 0.0
+    private var flp2R = 0.0
+    private var fs1L = 0.0
+    private var fs2L = 0.0
+    private var fs1R = 0.0
+    private var fs2R = 0.0
+    private var fanPhase = 0.0
+    private val fanPhaseInc = twoPi * 0.28 / sampleRate
 
     /* Slow organic drift: random targets with a long smoothing time. */
     private var driftTarget = 0.0
@@ -167,9 +233,14 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         rainRng = (seed xor 0x5f356495.toInt()) or 1
         rainA = ((seed * 22695477 + 1) xor 0x3c6ef372) or 1
         rainB = ((seed * 1103515245 + 12345) xor 0x2b7e1516) or 1
+        airA = ((seed * 1664525 + 1013904223) xor 0x1b56c4e9) or 1
+        airB = ((seed * 22695477 + 1) xor 0x7f4a7c15) or 1
+        airRng = ((seed * 1103515245 + 12345) xor 0x4d2a6f1b) or 1
         driftRng = (seed xor 0x2c1b3c6d.toInt()) or 1
         kDrift = 1.0 - exp(-1.0 / (sampleRate * 2.5))
         kGust = 1.0 - exp(-1.0 / (sampleRate * 4.0))
+        kWindMove = 1.0 - exp(-1.0 / (sampleRate * 1.5))
+        kWindGust = 1.0 - exp(-1.0 / (sampleRate * 0.45))
         p = exp(-twoPi * 10.0 / sampleRate)
         g = 0.5 * sqrt(1.0 - p * p) / sqrt(1.0 / 3.0)
         setHighpass()
@@ -261,6 +332,13 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         return ((rainRng.toLong() and 0xFFFFFFFFL) + 1.0) / 4294967297.0
     }
 
+    private fun nextAirUnit(): Double {
+        airRng = airRng xor (airRng shl 13)
+        airRng = airRng xor (airRng ushr 17)
+        airRng = airRng xor (airRng shl 5)
+        return ((airRng.toLong() and 0xFFFFFFFFL) + 1.0) / 4294967297.0
+    }
+
     private fun setRainBedCoeffs(hz: Double) {
         Sound.highPassCoeffsInto(rainBedHp, hz.coerceIn(50.0, 2000.0), qButter, sampleRate)
         lastRainBedHz = hz
@@ -287,6 +365,8 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         val tRain = t.rain
         val tDrops = t.drops
         val tPlink = t.plink
+        val tWind = t.wind
+        val tFan = t.fan
         val tDrift = t.drift
 
         if (!ready) {
@@ -300,6 +380,8 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
             sRain = tRain
             sDrops = tDrops
             sPlink = tPlink
+            sWind = tWind
+            sFan = tFan
             ready = true
         }
 
@@ -313,6 +395,8 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         var b = this.b
         var rainA = this.rainA
         var rainB = this.rainB
+        var airA = this.airA
+        var airB = this.airB
         var yL = this.yL
         var yR = this.yR
         var sCut = this.sCut
@@ -325,6 +409,8 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         var sRain = this.sRain
         var sDrops = this.sDrops
         var sPlink = this.sPlink
+        var sWind = this.sWind
+        var sFan = this.sFan
         var az1L = this.az1L
         var az2L = this.az2L
         var az1R = this.az1R
@@ -336,6 +422,13 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         var rainGustCountdown = this.rainGustCountdown
         var plinkNext = this.plinkNext
         var plinkCountdown = this.plinkCountdown
+        var windMove = this.windMove
+        var windMoveTarget = this.windMoveTarget
+        var windMoveCountdown = this.windMoveCountdown
+        var windGust = this.windGust
+        var windGustTarget = this.windGustTarget
+        var windGustCountdown = this.windGustCountdown
+        var fanPhase = this.fanPhase
         var rh0 = rainBedHp[0]
         var rh1 = rainBedHp[1]
         var rh2 = rainBedHp[2]
@@ -393,6 +486,8 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
             sRain += ks * (tRain - sRain)
             sDrops += ks * (tDrops - sDrops)
             sPlink += ks * (tPlink - sPlink)
+            sWind += ks * (tWind - sWind)
+            sFan += ks * (tFan - sFan)
 
             if (--driftCountdown <= 0) {
                 driftTarget = nextDriftUnit() * 2.0 - 1.0
@@ -447,6 +542,16 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
             rainB = rainB xor (rainB shl 5)
             val rwL = (rainA.toLong() and 0xFFFFFFFFL) / 2147483648.0 - 1.0
             val rwR = (rainB.toLong() and 0xFFFFFFFFL) / 2147483648.0 - 1.0
+
+            // Airflow uses a third source so wind/fan stay independent of rain.
+            airA = airA xor (airA shl 13)
+            airA = airA xor (airA ushr 17)
+            airA = airA xor (airA shl 5)
+            airB = airB xor (airB shl 13)
+            airB = airB xor (airB ushr 17)
+            airB = airB xor (airB shl 5)
+            val awL = (airA.toLong() and 0xFFFFFFFFL) / 2147483648.0 - 1.0
+            val awR = (airB.toLong() and 0xFFFFFFFFL) / 2147483648.0 - 1.0
 
             // Colour source. All sources are normalised to roughly 0.5 RMS
             // (white is 0.577) so the loudness model can keep levels even.
@@ -529,6 +634,108 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
                 val airGain = sAir * Sound.AIR_NORM
                 xL += hpL * airGain
                 xR += (sCor * hpL + sInd * hpR) * airGain
+            }
+
+            // Airflow: wind is a moving band-pass, fan is low-mid airflow with
+            // a slow rotation. They share a dedicated pink source.
+            if (sWind > 0.001 || sFan > 0.001) {
+                apk0L = 0.99765 * apk0L + awL * 0.0990460
+                apk1L = 0.96300 * apk1L + awL * 0.2965164
+                apk2L = 0.57000 * apk2L + awL * 1.0526913
+                apk0R = 0.99765 * apk0R + awR * 0.0990460
+                apk1R = 0.96300 * apk1R + awR * 0.2965164
+                apk2R = 0.57000 * apk2R + awR * 1.0526913
+                val airflowL = (apk0L + apk1L + apk2L + awL * 0.1848) * Sound.PINK_GAIN
+                val airflowR = (apk0R + apk1R + apk2R + awR * 0.1848) * Sound.PINK_GAIN
+
+                var windL = 0.0
+                var windR = 0.0
+                if (sWind > 0.001) {
+                    if (--windMoveCountdown <= 0) {
+                        windMoveTarget = nextAirUnit()
+                        windMoveCountdown = (sampleRate * (3.0 + 5.0 * nextAirUnit())).toInt()
+                    }
+                    windMove += kWindMove * (windMoveTarget - windMove)
+                    if (--windGustCountdown <= 0) {
+                        windGustTarget = 0.75 + 0.5 * nextAirUnit()
+                        windGustCountdown = (sampleRate * (1.0 + 2.0 * nextAirUnit())).toInt()
+                    }
+                    windGust += kWindGust * (windGustTarget - windGust)
+                    val move = windMove.coerceIn(0.0, 1.0)
+                    val windGain = Sound.windGain(sWind.toFloat()) * windGust
+
+                    val whL = windHp[0] * airflowL + whp1L
+                    whp1L = windHp[1] * airflowL - windHp[3] * whL + whp2L
+                    whp2L = windHp[2] * airflowL - windHp[4] * whL
+                    val whR = windHp[0] * airflowR + whp1R
+                    whp1R = windHp[1] * airflowR - windHp[3] * whR + whp2R
+                    whp2R = windHp[2] * airflowR - windHp[4] * whR
+
+                    val baL = windBandA[0] * whL + wba1L
+                    wba1L = windBandA[1] * whL - windBandA[3] * baL + wba2L
+                    wba2L = windBandA[2] * whL - windBandA[4] * baL
+                    val bbL = windBandB[0] * whL + wbb1L
+                    wbb1L = windBandB[1] * whL - windBandB[3] * bbL + wbb2L
+                    wbb2L = windBandB[2] * whL - windBandB[4] * bbL
+                    val baR = windBandA[0] * whR + wba1R
+                    wba1R = windBandA[1] * whR - windBandA[3] * baR + wba2R
+                    wba2R = windBandA[2] * whR - windBandA[4] * baR
+                    val bbR = windBandB[0] * whR + wbb1R
+                    wbb1R = windBandB[1] * whR - windBandB[3] * bbR + wbb2R
+                    wbb2R = windBandB[2] * whR - windBandB[4] * bbR
+
+                    val mixL = baL * (1.0 - move) + bbL * move
+                    val mixR = baR * (1.0 - move) + bbR * move
+                    val wlL = windLp[0] * mixL + wlp1L
+                    wlp1L = windLp[1] * mixL - windLp[3] * wlL + wlp2L
+                    wlp2L = windLp[2] * mixL - windLp[4] * wlL
+                    val wlR = windLp[0] * mixR + wlp1R
+                    wlp1R = windLp[1] * mixR - windLp[3] * wlR + wlp2R
+                    wlp2R = windLp[2] * mixR - windLp[4] * wlR
+
+                    windL = wlL * windGain
+                    windR = wlR * windGain
+                }
+
+                var fanL = 0.0
+                var fanR = 0.0
+                if (sFan > 0.001) {
+                    fanPhase += fanPhaseInc
+                    if (fanPhase > twoPi) fanPhase -= twoPi
+                    val wobble = 1.0 + 0.06 * sin(fanPhase)
+                    val fanGain = Sound.fanGain(sFan.toFloat()) * wobble
+
+                    val fhL = fanHp[0] * airflowL + fhp1L
+                    fhp1L = fanHp[1] * airflowL - fanHp[3] * fhL + fhp2L
+                    fhp2L = fanHp[2] * airflowL - fanHp[4] * fhL
+                    val fhR = fanHp[0] * airflowR + fhp1R
+                    fhp1R = fanHp[1] * airflowR - fanHp[3] * fhR + fhp2R
+                    fhp2R = fanHp[2] * airflowR - fanHp[4] * fhR
+
+                    val flL = fanLp[0] * fhL + flp1L
+                    flp1L = fanLp[1] * fhL - fanLp[3] * flL + flp2L
+                    flp2L = fanLp[2] * fhL - fanLp[4] * flL
+                    val flR = fanLp[0] * fhR + flp1R
+                    flp1R = fanLp[1] * fhR - fanLp[3] * flR + flp2R
+                    flp2R = fanLp[2] * fhR - fanLp[4] * flR
+
+                    val fsL = fanShelf[0] * flL + fs1L
+                    fs1L = fanShelf[1] * flL - fanShelf[3] * fsL + fs2L
+                    fs2L = fanShelf[2] * flL - fanShelf[4] * fsL
+                    val fsR = fanShelf[0] * flR + fs1R
+                    fs1R = fanShelf[1] * flR - fanShelf[3] * fsR + fs2R
+                    fs2R = fanShelf[2] * flR - fanShelf[4] * fsR
+
+                    fanL = fsL * fanGain
+                    fanR = fsR * fanGain
+                }
+
+                val flowL = windL + fanL
+                val flowR = windR + fanR
+                val flowMid = (flowL + flowR) * 0.5
+                val flowSide = (flowL - flowR) * 0.5 * sWidth
+                xL += flowMid + flowSide
+                xR += flowMid - flowSide
             }
 
             // Rain: a pink bed, short drop bursts and occasional plinks.
@@ -623,9 +830,14 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
                             plinkInc[v] = inc0
                             plinkStep[v] = (inc1 - inc0) / (sampleRate * dur)
                             plinkDecay[v] = exp(-1.0 / (sampleRate * dur))
-                            plinkEnv[v] = Sound.PLINK_NORM * sPlink *
+                            val peak = Sound.PLINK_NORM * sPlink *
                                 (0.35 + 0.65 * sRain) *
                                 (0.4 + 0.6 * u) * (0.5 + 0.5 * nextRainUnit())
+                            plinkEnv[v] = 0.0
+                            val attack = (sampleRate * Sound.PLINK_ATTACK)
+                                .toInt().coerceAtLeast(1)
+                            plinkAttackSamples[v] = attack
+                            plinkAttackStep[v] = peak / attack
                             val pan = nextRainUnit() * 2.0 - 1.0
                             plinkPanL[v] = sqrt(0.5 * (1.0 - pan))
                             plinkPanR[v] = sqrt(0.5 * (1.0 + pan))
@@ -636,13 +848,18 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
 
                     for (p in 0 until Sound.PLINK_VOICES) {
                         val e = plinkEnv[p]
-                        if (e > 1e-5) {
+                        if (e > 1e-5 || plinkAttackSamples[p] > 0) {
                             val y = e * sin(plinkPhase[p])
                             var ph = plinkPhase[p] + plinkInc[p]
                             if (ph > twoPi) ph -= twoPi
                             plinkPhase[p] = ph
                             plinkInc[p] += plinkStep[p]
-                            plinkEnv[p] = e * plinkDecay[p]
+                            if (plinkAttackSamples[p] > 0) {
+                                plinkEnv[p] = e + plinkAttackStep[p]
+                                plinkAttackSamples[p]--
+                            } else {
+                                plinkEnv[p] = e * plinkDecay[p]
+                            }
                             plinkL += y * plinkPanL[p]
                             plinkR += y * plinkPanR[p]
                         }
@@ -710,6 +927,8 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         this.b = b
         this.rainA = rainA
         this.rainB = rainB
+        this.airA = airA
+        this.airB = airB
         this.yL = yL
         this.yR = yR
         this.sCut = sCut
@@ -722,6 +941,8 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         this.sRain = sRain
         this.sDrops = sDrops
         this.sPlink = sPlink
+        this.sWind = sWind
+        this.sFan = sFan
         this.az1L = az1L
         this.az2L = az2L
         this.az1R = az1R
@@ -733,6 +954,13 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         this.rainGustCountdown = rainGustCountdown
         this.plinkNext = plinkNext
         this.plinkCountdown = plinkCountdown
+        this.windMove = windMove
+        this.windMoveTarget = windMoveTarget
+        this.windMoveCountdown = windMoveCountdown
+        this.windGust = windGust
+        this.windGustTarget = windGustTarget
+        this.windGustCountdown = windGustCountdown
+        this.fanPhase = fanPhase
         this.driftTarget = driftTarget
         this.driftValue = driftValue
         this.driftPanTarget = driftPanTarget

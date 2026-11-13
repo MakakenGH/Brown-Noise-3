@@ -13,20 +13,25 @@ data class Preset(
     val rain: Float,
     val drops: Float,
     val plink: Float,
+    val wind: Float,
+    val fan: Float,
     val air: Float,
     val drift: Float,
 )
 
 val Presets: List<Preset> = listOf(
-    Preset("Drizzle", NoiseColor.PINK, 0.30f, 0.10f, 0.80f, 0.08f, 0.20f, 0.70f, 0.15f, 0.00f, 0.15f),
-    Preset("Rain", NoiseColor.PINK, 0.30f, 0.15f, 0.85f, 0.10f, 0.45f, 0.65f, 0.10f, 0.00f, 0.20f),
-    Preset("Downpour", NoiseColor.BROWN, 0.35f, 0.50f, 0.95f, 0.05f, 0.85f, 0.75f, 0.04f, 0.00f, 0.25f),
-    Preset("Plinks", NoiseColor.PINK, 0.20f, 0.05f, 0.80f, 0.05f, 0.15f, 0.30f, 0.90f, 0.00f, 0.10f),
-    Preset("Still", NoiseColor.BROWN, 0.82f, 0.35f, 0.55f, 0.05f, 0.00f, 0.00f, 0.00f, 0.10f, 0.05f),
-    Preset("Ocean", NoiseColor.BROWN, 0.55f, 0.45f, 0.90f, 0.35f, 0.00f, 0.00f, 0.00f, 0.25f, 0.50f),
-    Preset("Fan", NoiseColor.BROWN, 0.55f, 0.25f, 0.45f, 0.00f, 0.00f, 0.00f, 0.00f, 0.35f, 0.00f),
-    Preset("Night", NoiseColor.GREEN, 0.30f, 0.15f, 0.85f, 0.10f, 0.00f, 0.00f, 0.00f, 0.45f, 0.30f),
-    Preset("Focus", NoiseColor.PINK, 0.38f, 0.15f, 0.30f, 0.00f, 0.00f, 0.00f, 0.00f, 0.65f, 0.00f),
+    Preset("Drizzle", NoiseColor.PINK, 0.30f, 0.10f, 0.80f, 0.08f, 0.20f, 0.70f, 0.15f, 0.00f, 0.00f, 0.00f, 0.15f),
+    Preset("Rain", NoiseColor.PINK, 0.30f, 0.15f, 0.85f, 0.10f, 0.45f, 0.65f, 0.10f, 0.00f, 0.00f, 0.00f, 0.20f),
+    Preset("Downpour", NoiseColor.BROWN, 0.35f, 0.50f, 0.95f, 0.05f, 0.85f, 0.75f, 0.04f, 0.00f, 0.00f, 0.00f, 0.25f),
+    Preset("Plinks", NoiseColor.PINK, 0.20f, 0.05f, 0.80f, 0.05f, 0.15f, 0.30f, 0.90f, 0.00f, 0.00f, 0.00f, 0.10f),
+    Preset("Wind", NoiseColor.BROWN, 0.45f, 0.15f, 0.90f, 0.15f, 0.00f, 0.00f, 0.00f, 0.65f, 0.00f, 0.15f, 0.40f),
+    Preset("Fan", NoiseColor.BROWN, 0.55f, 0.30f, 0.50f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f, 0.65f, 0.10f, 0.20f),
+    Preset("Aircon", NoiseColor.BROWN, 0.50f, 0.20f, 0.60f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f, 0.50f, 0.15f, 0.15f),
+    Preset("Breeze", NoiseColor.PINK, 0.35f, 0.10f, 0.85f, 0.20f, 0.00f, 0.00f, 0.00f, 0.35f, 0.00f, 0.20f, 0.30f),
+    Preset("Still", NoiseColor.BROWN, 0.82f, 0.35f, 0.55f, 0.05f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f, 0.10f, 0.05f),
+    Preset("Ocean", NoiseColor.BROWN, 0.55f, 0.45f, 0.90f, 0.35f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f, 0.25f, 0.50f),
+    Preset("Night", NoiseColor.GREEN, 0.30f, 0.15f, 0.85f, 0.10f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f, 0.45f, 0.30f),
+    Preset("Focus", NoiseColor.PINK, 0.38f, 0.15f, 0.30f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f, 0.65f, 0.00f),
 )
 
 fun Preset.toDraft(name: String = ""): Draft = Draft(
@@ -39,6 +44,8 @@ fun Preset.toDraft(name: String = ""): Draft = Draft(
     rain = rain,
     drops = drops,
     plink = plink,
+    wind = wind,
+    fan = fan,
     air = air,
     drift = drift,
 )
@@ -53,6 +60,8 @@ fun randomDraft(): Draft = Draft(
     rain = Random.nextFloat() * 0.60f,
     drops = 0.30f + Random.nextFloat() * 0.60f,
     plink = Random.nextFloat() * 0.40f,
+    wind = Random.nextFloat() * 0.40f,
+    fan = Random.nextFloat() * 0.40f,
     air = 0.25f + Random.nextFloat() * 0.50f,
     drift = Random.nextFloat() * 0.35f,
 )

@@ -95,6 +95,8 @@ fun ColorsOfNoiseApp(
                 rain = ui.params.rain,
                 drops = ui.params.drops,
                 plink = ui.params.plink,
+                wind = ui.params.wind,
+                fan = ui.params.fan,
                 air = ui.params.air,
                 drift = ui.params.drift,
             ),

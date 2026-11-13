@@ -145,6 +145,8 @@ class MainActivity : ComponentActivity() {
             .putExtra(NoiseService.EXTRA_RAIN, params.rain)
             .putExtra(NoiseService.EXTRA_DROPS, params.drops)
             .putExtra(NoiseService.EXTRA_PLINK, params.plink)
+            .putExtra(NoiseService.EXTRA_WIND, params.wind)
+            .putExtra(NoiseService.EXTRA_FAN, params.fan)
             .putExtra(NoiseService.EXTRA_AIR, params.air)
             .putExtra(NoiseService.EXTRA_DRIFT, params.drift)
             .putExtra(NoiseService.EXTRA_NAME, name)
@@ -233,6 +235,8 @@ class MainActivity : ComponentActivity() {
             rain = draft.rain,
             drops = draft.drops,
             plink = draft.plink,
+            wind = draft.wind,
+            fan = draft.fan,
             air = draft.air,
             drift = draft.drift,
         )

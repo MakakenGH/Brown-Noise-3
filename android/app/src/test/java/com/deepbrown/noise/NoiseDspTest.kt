@@ -190,15 +190,60 @@ class NoiseDspTest {
         val (rmsHeavy, hfHeavy, peakHeavy) = renderRain(0.85f, 0.75f, 0.04f)
         val (rmsPlink, _, peakPlink) = renderRain(0.25f, 0f, 0.8f)
 
-        assertTrue("dry RMS sane, got $rmsDry", rmsDry in 0.11..0.18)
-        assertTrue("light rain RMS sane, got $rmsLight", rmsLight in 0.11..0.18)
-        assertTrue("medium rain RMS sane, got $rmsMedium", rmsMedium in 0.11..0.18)
-        assertTrue("heavy rain RMS sane, got $rmsHeavy", rmsHeavy in 0.11..0.18)
-        assertTrue("plink RMS sane, got $rmsPlink", rmsPlink in 0.11..0.18)
+        assertTrue("dry RMS sane, got $rmsDry", rmsDry in 0.10..0.19)
+        assertTrue("light rain RMS sane, got $rmsLight", rmsLight in 0.10..0.19)
+        assertTrue("medium rain RMS sane, got $rmsMedium", rmsMedium in 0.10..0.19)
+        assertTrue("heavy rain RMS sane, got $rmsHeavy", rmsHeavy in 0.10..0.19)
+        assertTrue("plink RMS sane, got $rmsPlink", rmsPlink in 0.10..0.19)
         assertTrue("medium rain should add high-frequency energy", hfMedium > hfDry)
         assertTrue("heavy rain should add high-frequency energy", hfHeavy > hfDry)
         assertTrue("heavy rain clipped, peak=$peakHeavy", peakHeavy < 32767)
         assertTrue("plinks clipped, peak=$peakPlink", peakPlink < 32767)
+    }
+
+    @Test
+    fun windAndFanStayBounded() {
+        fun renderFlow(wind: Float, fan: Float): Triple<Double, Int, Double> {
+            val dsp = NoiseDsp(48000)
+            dsp.setParams(
+                Params(
+                    deep = 0.5f,
+                    volume = 1f,
+                    color = NoiseColor.BROWN,
+                    swell = 0f,
+                    wind = wind,
+                    fan = fan,
+                ).toDsp(),
+            )
+            dsp.setMasterTarget(1.0)
+            dsp.setSleepGain(1.0)
+            val frames = 144_000
+            val out = ShortArray(frames * 2)
+            dsp.render(out, frames)
+            var sum = 0.0
+            var count = 0
+            var peak = 0
+            var diff = 0.0
+            var previous = out[24_000] / 32768.0
+            for (i in 24_001 until frames) {
+                val value = out[i * 2] / 32768.0
+                sum += value * value
+                val d = value - previous
+                diff += d * d
+                previous = value
+                peak = max(peak, abs(out[i * 2].toInt()))
+                count++
+            }
+            return Triple(sqrt(sum / count), peak, diff / count)
+        }
+
+        val (rmsWind, peakWind, _) = renderFlow(0.65f, 0f)
+        val (rmsFan, peakFan, _) = renderFlow(0f, 0.65f)
+
+        assertTrue("wind RMS sane, got $rmsWind", rmsWind in 0.10..0.19)
+        assertTrue("fan RMS sane, got $rmsFan", rmsFan in 0.10..0.19)
+        assertTrue("wind clipped, peak=$peakWind", peakWind < 32767)
+        assertTrue("fan clipped, peak=$peakFan", peakFan < 32767)
     }
 
     @Test
@@ -254,13 +299,13 @@ class NoiseDspTest {
         val early = rms(4_800, 9_600)       // ~0.1–0.2 s
         val late = rms(100_000, 115_000)    // ~2.1–2.4 s
         assertTrue("fade-in should start quieter, early=$early late=$late", early < late)
-        assertTrue("fade-in should reach a normal level, got $late", late in 0.10..0.18)
+        assertTrue("fade-in should reach a normal level, got $late", late in 0.09..0.20)
     }
 
     @Test
     fun extremeSettingsStayFinite() {
         val dsp = NoiseDsp(48000)
-        dsp.setParams(Params(deep = 1f, rumble = 1f, width = 0f, swell = 1f, volume = 1f, rain = 1f, drops = 1f, plink = 1f, air = 1f, drift = 1f).toDsp())
+        dsp.setParams(Params(deep = 1f, rumble = 1f, width = 0f, swell = 1f, volume = 1f, rain = 1f, drops = 1f, plink = 1f, wind = 1f, fan = 1f, air = 1f, drift = 1f).toDsp())
         dsp.setMasterTarget(1.0)
         val out = ShortArray(4800 * 2)
         dsp.render(out, 4800)

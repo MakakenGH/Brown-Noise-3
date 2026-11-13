@@ -20,6 +20,8 @@ data class Params(
     val rain: Float = 0f,
     val drops: Float = 0.6f,
     val plink: Float = 0.1f,
+    val wind: Float = 0f,
+    val fan: Float = 0f,
     val air: Float = 0f,
     val drift: Float = 0f,
 ) {
@@ -33,6 +35,8 @@ data class Params(
         rain = rain.coerceIn(0f, 1f),
         drops = drops.coerceIn(0f, 1f),
         plink = plink.coerceIn(0f, 1f),
+        wind = wind.coerceIn(0f, 1f),
+        fan = fan.coerceIn(0f, 1f),
         air = air.coerceIn(0f, 1f),
         drift = drift.coerceIn(0f, 1f),
     )
@@ -46,6 +50,8 @@ data class Params(
         "rain" -> copy(rain = value)
         "drops" -> copy(drops = value)
         "plink" -> copy(plink = value)
+        "wind" -> copy(wind = value)
+        "fan" -> copy(fan = value)
         "air" -> copy(air = value)
         "drift" -> copy(drift = value)
         else -> this
@@ -63,6 +69,8 @@ data class DspParams(
     val rain: Double = 0.0,
     val drops: Double = 0.6,
     val plink: Double = 0.1,
+    val wind: Double = 0.0,
+    val fan: Double = 0.0,
     val air: Double = 0.0,
     val drift: Double = 0.0,
 )
@@ -88,13 +96,28 @@ object Sound {
     val RAIN_BANDS_HZ = doubleArrayOf(700.0, 1100.0, 1700.0, 2600.0, 4000.0, 6000.0)
 
     const val PLINK_VOICES = 3
-    const val PLINK_F0_MIN = 900.0
-    const val PLINK_F0_MAX = 2600.0
-    const val PLINK_RISE_MIN = 1.2
-    const val PLINK_RISE_MAX = 2.0
-    const val PLINK_DURATION_MIN = 0.010
-    const val PLINK_DURATION_MAX = 0.020
-    const val PLINK_NORM = 0.15
+    const val PLINK_F0_MIN = 350.0
+    const val PLINK_F0_MAX = 1200.0
+    const val PLINK_RISE_MIN = 1.10
+    const val PLINK_RISE_MAX = 1.50
+    const val PLINK_DURATION_MIN = 0.020
+    const val PLINK_DURATION_MAX = 0.035
+    const val PLINK_ATTACK = 0.003
+    const val PLINK_NORM = 0.12
+
+    /* Airflow: wind is a moving band-passed noise; fan is a low-mid airflow
+     * with a slow rotation. Both use a dedicated pink source. */
+    const val WIND_HP_HZ = 80.0
+    const val WIND_BAND_A_HZ = 300.0
+    const val WIND_BAND_B_HZ = 650.0
+    const val WIND_BAND_Q = 2.0
+    const val WIND_LP_HZ = 3_000.0
+    const val WIND_NORM = 0.40
+    const val FAN_HP_HZ = 60.0
+    const val FAN_LP_HZ = 1_000.0
+    const val FAN_LOW_SHELF_HZ = 180.0
+    const val FAN_LOW_SHELF_DB = 4.0
+    const val FAN_NORM = 0.28
     const val HP_HZ = 18.0
     const val TARGET_RMS = 0.14
 
@@ -145,6 +168,12 @@ object Sound {
         if (rain <= 0f || plink <= 0f) return 0.0
         return 0.1 + 2.9 * rain.coerceIn(0f, 1f) * plink.coerceIn(0f, 1f)
     }
+
+    fun windGain(wind: Float): Double =
+        wind.coerceIn(0f, 1f).toDouble().pow(1.3) * WIND_NORM
+
+    fun fanGain(fan: Float): Double =
+        fan.coerceIn(0f, 1f).toDouble().pow(1.2) * FAN_NORM
 
     /** Smoothstep sleep fade: 1 outside the fade window, 0 at the timer end. */
     fun sleepGain(remainingMs: Long, fadeMs: Long): Double {
@@ -235,6 +264,22 @@ object Sound {
         )
     }
 
+    /** RBJ low-shelf coefficients for the fan body. */
+    fun lowShelfCoeffs(f0: Double, gDb: Double, fs: Int): DoubleArray {
+        val w0 = 2.0 * PI * f0 / fs
+        val cosW = cos(w0)
+        val sinW = sin(w0)
+        val amp = 10.0.pow(gDb / 40.0)
+        val k = 2.0 * sqrt(amp) * (sinW / 2.0) * sqrt(2.0)
+        val b0 = amp * ((amp + 1.0) - (amp - 1.0) * cosW + k)
+        val b1 = 2.0 * amp * ((amp - 1.0) - (amp + 1.0) * cosW)
+        val b2 = amp * ((amp + 1.0) - (amp - 1.0) * cosW - k)
+        val a0 = (amp + 1.0) + (amp - 1.0) * cosW + k
+        val a1 = -2.0 * ((amp - 1.0) + (amp + 1.0) * cosW)
+        val a2 = (amp + 1.0) + (amp - 1.0) * cosW - k
+        return doubleArrayOf(b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0)
+    }
+
     /** RBJ constant-peak band-pass, used for the rain drop bursts. */
     fun bandPassCoeffs(f0: Double, q: Double, fs: Int): DoubleArray {
         val w0 = 2.0 * PI * f0 / fs
@@ -322,6 +367,8 @@ fun Params.toDsp(): DspParams {
         rain = rain.toDouble(),
         drops = drops.toDouble(),
         plink = plink.toDouble(),
+        wind = wind.toDouble(),
+        fan = fan.toDouble(),
         air = air.toDouble(),
         drift = drift.toDouble(),
     )

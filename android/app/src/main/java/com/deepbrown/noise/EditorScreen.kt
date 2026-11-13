@@ -202,16 +202,6 @@ fun EditorScreen(
                     )
                     HairlineDivider(startPadding = 18.dp)
                     ParameterRow(
-                        label = "Air",
-                        value = draft.air,
-                        description = "Adds air and detail above the deepness",
-                        accent = draft.color.dot,
-                        startLabel = "Hushed",
-                        endLabel = "Airy",
-                        onChange = { update(draft.copy(air = it)) },
-                    )
-                    HairlineDivider(startPadding = 18.dp)
-                    ParameterRow(
                         label = "Width",
                         value = draft.width,
                         description = "From centred to enveloping",
@@ -219,6 +209,37 @@ fun EditorScreen(
                         startLabel = "Centred",
                         endLabel = "Enveloping",
                         onChange = { update(draft.copy(width = it)) },
+                    )
+                }
+                ParameterCard {
+                    ParameterRow(
+                        label = "Air",
+                        value = draft.air,
+                        description = "Top-end hiss above the body",
+                        accent = draft.color.dot,
+                        startLabel = "Hushed",
+                        endLabel = "Airy",
+                        onChange = { update(draft.copy(air = it)) },
+                    )
+                    HairlineDivider(startPadding = 18.dp)
+                    ParameterRow(
+                        label = "Wind",
+                        value = draft.wind,
+                        description = "Moving low-mid airflow with slow gusts",
+                        accent = draft.color.dot,
+                        startLabel = "Calm",
+                        endLabel = "Gusty",
+                        onChange = { update(draft.copy(wind = it)) },
+                    )
+                    HairlineDivider(startPadding = 18.dp)
+                    ParameterRow(
+                        label = "Fan",
+                        value = draft.fan,
+                        description = "Steady low-mid airflow with slow rotation",
+                        accent = draft.color.dot,
+                        startLabel = "Still",
+                        endLabel = "Rotating",
+                        onChange = { update(draft.copy(fan = it)) },
                     )
                 }
                 ParameterCard {

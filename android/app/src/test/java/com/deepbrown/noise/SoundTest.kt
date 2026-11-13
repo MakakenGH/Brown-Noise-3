@@ -35,6 +35,8 @@ class SoundTest {
             assertEquals(preset.rain, draft.rain, 0f)
             assertEquals(preset.drops, draft.drops, 0f)
             assertEquals(preset.plink, draft.plink, 0f)
+            assertEquals(preset.wind, draft.wind, 0f)
+            assertEquals(preset.fan, draft.fan, 0f)
             assertEquals(preset.air, draft.air, 0f)
             assertEquals(preset.drift, draft.drift, 0f)
         }
@@ -51,6 +53,8 @@ class SoundTest {
             assertTrue("rain ${draft.rain}", draft.rain in 0f..0.6f)
             assertTrue("drops ${draft.drops}", draft.drops in 0.3f..0.9f)
             assertTrue("plink ${draft.plink}", draft.plink in 0f..0.4f)
+            assertTrue("wind ${draft.wind}", draft.wind in 0f..0.4f)
+            assertTrue("fan ${draft.fan}", draft.fan in 0f..0.4f)
             assertTrue("air ${draft.air}", draft.air in 0.25f..0.75f)
             assertTrue("drift ${draft.drift}", draft.drift in 0f..0.35f)
         }
@@ -69,6 +73,10 @@ class SoundTest {
         assertEquals(0.0, Sound.rainDropGain(0f, 1f), 1e-9)
         assertEquals(0.0, Sound.plinkRate(0f, 1f), 1e-9)
         assertTrue(Sound.plinkRate(1f, 1f) > Sound.plinkRate(0.2f, 1f))
+        assertEquals(0.0, Sound.windGain(0f), 1e-9)
+        assertEquals(0.0, Sound.fanGain(0f), 1e-9)
+        assertTrue(Sound.windGain(1f) > Sound.windGain(0.5f))
+        assertTrue(Sound.fanGain(1f) > Sound.fanGain(0.5f))
     }
 
     @Test
@@ -85,6 +93,8 @@ class SoundTest {
         assertEquals(0f, sound.rain, 0f)
         assertEquals(0.6f, sound.drops, 0f)
         assertEquals(0.1f, sound.plink, 0f)
+        assertEquals(0f, sound.wind, 0f)
+        assertEquals(0f, sound.fan, 0f)
         assertEquals(0f, sound.air, 0f)
         assertEquals(0f, sound.drift, 0f)
 
@@ -92,6 +102,8 @@ class SoundTest {
         assertEquals(0f, params.rain, 0f)
         assertEquals(0.6f, params.drops, 0f)
         assertEquals(0.1f, params.plink, 0f)
+        assertEquals(0f, params.wind, 0f)
+        assertEquals(0f, params.fan, 0f)
         assertEquals(0f, params.air, 0f)
         assertEquals(0f, params.drift, 0f)
     }

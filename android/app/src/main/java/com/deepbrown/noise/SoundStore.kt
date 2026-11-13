@@ -35,6 +35,8 @@ class SoundStore(context: Context) {
                             rain = rain,
                             drops = drops,
                             plink = plink,
+                            wind = o.optDouble("wind", 0.0).toFloat().coerceIn(0f, 1f),
+                            fan = o.optDouble("fan", 0.0).toFloat().coerceIn(0f, 1f),
                             air = o.optDouble("air", 0.0).toFloat().coerceIn(0f, 1f),
                             drift = o.optDouble("drift", 0.0).toFloat().coerceIn(0f, 1f),
                         ),
@@ -61,6 +63,8 @@ class SoundStore(context: Context) {
                     .put("rain", s.rain.toDouble())
                     .put("drops", s.drops.toDouble())
                     .put("plink", s.plink.toDouble())
+                    .put("wind", s.wind.toDouble())
+                    .put("fan", s.fan.toDouble())
                     .put("air", s.air.toDouble())
                     .put("drift", s.drift.toDouble()),
             )
