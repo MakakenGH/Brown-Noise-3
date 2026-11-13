@@ -51,6 +51,7 @@ fun ColorsOfNoiseApp(
     previewHintSeen: Boolean,
     onPreviewHintSeen: () -> Unit,
     scope: () -> FloatArray?,
+    bands: () -> FloatArray?,
 ) {
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
     var sheet by remember { mutableStateOf<HomeSheet?>(null) }
@@ -134,12 +135,14 @@ fun ColorsOfNoiseApp(
                 color = ui.params.color,
                 deep = ui.params.deep,
                 scope = scope,
+                bands = bands,
                 onQuick = onQuick,
                 onPlaySound = onPlaySound,
                 onSoundMenu = { sheet = HomeSheet.Sound(it) },
                 onOpenNowPlaying = { openNowPlaying() },
                 onToggleNowPlaying = onToggleNowPlaying,
                 onCreate = { openEditor(null) },
+                onCreatePreset = { preset -> openEditor(null, preset.toDraft()) },
                 onSettings = { sheet = HomeSheet.Playback },
                 timerEndWall = ui.timerEndWall,
                 savedId = savedId,
@@ -158,6 +161,7 @@ fun ColorsOfNoiseApp(
                 previewing = previewActive,
                 showPreviewHint = !previewHintSeen && !previewHintDismissed,
                 scope = scope,
+                bands = bands,
                 onDraftChanged = { draft ->
                     if (previewActive) onPreviewParams(draft)
                 },

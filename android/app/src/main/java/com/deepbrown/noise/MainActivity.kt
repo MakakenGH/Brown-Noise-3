@@ -105,6 +105,7 @@ class MainActivity : ComponentActivity() {
                         previewHintSeen = store.previewHintSeen,
                         onPreviewHintSeen = { store.previewHintSeen = true },
                         scope = { service?.scope() },
+                        bands = { service?.bands() },
                     )
                 }
             }

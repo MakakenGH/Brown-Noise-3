@@ -140,6 +140,7 @@ fun NameSheet(
     onDismiss: () -> Unit,
 ) {
     var value by remember { mutableStateOf(initial) }
+    val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
     Sheet(onDismiss) {
         Column(
             Modifier
@@ -157,6 +158,8 @@ fun NameSheet(
                 onValueChange = { value = it },
                 placeholder = placeholder,
                 selectAllOnFocus = initial.isNotEmpty(),
+                autoFocus = true,
+                focusRequester = focusRequester,
                 onSubmit = {
                     if (value.isNotBlank()) onSave(value.trim())
                 },

@@ -1004,6 +1004,39 @@ class NoiseDsp(private val sampleRate: Int = 48000) {
         return out
     }
 
+    /**
+     * Four very small spectral probes: sub, low, mid and air. They run on the
+     * UI thread at 20–30 fps over the same scope ring, so the audio thread never
+     * blocks and no Visualizer permission is required.
+     */
+    fun copyBands(points: Int = 512): FloatArray {
+        val n = points.coerceIn(128, SCOPE_RING)
+        val start = (scopePos - n + SCOPE_RING) % SCOPE_RING
+        var mean = 0.0
+        for (i in 0 until n) mean += scopeRing[(start + i) % SCOPE_RING]
+        mean /= n
+
+        val frequencies = doubleArrayOf(55.0, 160.0, 700.0, 3200.0)
+        val out = FloatArray(4)
+        for (band in 0 until 4) {
+            val coeff = 2.0 * cos(twoPi * frequencies[band] / sampleRate)
+            var s0 = 0.0
+            var s1 = 0.0
+            var s2 = 0.0
+            for (i in 0 until n) {
+                val window = 0.5 - 0.5 * cos(twoPi * i / (n - 1))
+                val sample = (scopeRing[(start + i) % SCOPE_RING] - mean) * window
+                s0 = sample + coeff * s1 - s2
+                s2 = s1
+                s1 = s0
+            }
+            val power = s1 * s1 + s2 * s2 - coeff * s1 * s2
+            val amplitude = sqrt(max(power, 0.0)) / n
+            out[band] = (amplitude * 110.0).toFloat().coerceIn(0f, 1f)
+        }
+        return out
+    }
+
     private fun toPcm(value: Double): Short {
         val v = when {
             value > 1.0 -> 1.0

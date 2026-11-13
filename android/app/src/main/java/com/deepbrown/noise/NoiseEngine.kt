@@ -75,6 +75,8 @@ class NoiseEngine(
 
     fun scope(): FloatArray? = if (running) dsp.copyScope(72) else null
 
+    fun bands(): FloatArray? = if (running) dsp.copyBands(512) else null
+
     private fun audioLoop() {
         Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
 

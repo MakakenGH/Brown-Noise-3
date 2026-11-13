@@ -1,11 +1,12 @@
 package com.deepbrown.noise
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -13,6 +14,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,6 +24,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -49,7 +52,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -61,6 +63,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -69,6 +72,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.font.FontWeight
@@ -77,7 +81,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.PI
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 @Composable
 fun EditorScreen(
@@ -86,6 +92,7 @@ fun EditorScreen(
     previewing: Boolean,
     showPreviewHint: Boolean,
     scope: () -> FloatArray?,
+    bands: () -> FloatArray?,
     onDraftChanged: (Draft) -> Unit,
     onBack: () -> Unit,
     onSave: (Draft) -> Unit,
@@ -94,6 +101,10 @@ fun EditorScreen(
     var draft by remember(initial) { mutableStateOf(initial) }
     var showNameSheet by remember { mutableStateOf(false) }
     var showDiscard by remember { mutableStateOf(false) }
+    var group by remember { mutableStateOf(EditorGroup.Body) }
+    val tier = rememberVisualTier()
+    val visuals = rememberAudioVisuals(scope, bands, previewing, tier)
+    val wave = rememberCalmWave(scope, previewing, points = 30)
     val accent by androidx.compose.animation.animateColorAsState(
         targetValue = draft.color.dot,
         animationSpec = tween(1_200, easing = androidx.compose.animation.core.FastOutSlowInEasing),
@@ -112,8 +123,10 @@ fun EditorScreen(
     BackHandler { requestBack() }
 
     Box(Modifier.fillMaxSize().background(Bg)) {
-        NoiseAura(
-            color = draft.color.dot,
+        LivingAura(
+            color = accent,
+            visuals = visuals,
+            tier = tier,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -142,27 +155,49 @@ fun EditorScreen(
                         modifier = Modifier.size(24.dp),
                     )
                 }
-                Text(
-                    text = if (editing) "Edit sound" else "New sound",
-                    modifier = Modifier.weight(1f),
-                    fontFamily = Fraunces,
-                    fontSize = 20.sp,
-                    lineHeight = 26.sp,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    color = OnSurface,
-                )
                 Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .shadow(14.dp, CircleShape)
-                        .pressable(scale = 0.90f) {
-                            if (draft.name.isBlank()) showNameSheet = true else onSave(draft)
-                        }
-                        .clip(CircleShape)
-                        .background(accent),
+                    modifier = Modifier.weight(1f),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Default.Check, contentDescription = "Save", tint = Ink, modifier = Modifier.size(20.dp))
+                    Text(
+                        text = if (editing) "Edit sound" else "New sound",
+                        fontFamily = Fraunces,
+                        fontSize = 20.sp,
+                        lineHeight = 26.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        color = OnSurface,
+                    )
+                }
+                Row(
+                    modifier = Modifier
+                        .height(40.dp)
+                        .pressable(scale = 0.94f) {
+                            if (draft.name.isBlank()) showNameSheet = true else onSave(draft)
+                        }
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color(0xFFFFF8EA), Color(0xFFDDD1BF)),
+                            ),
+                        )
+                        .border(1.dp, Color.White.copy(alpha = 0.32f), RoundedCornerShape(20.dp))
+                        .padding(horizontal = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Default.Check,
+                        contentDescription = null,
+                        tint = Ink,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = "Save",
+                        fontFamily = DmSans,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp,
+                        color = Ink,
+                    )
                 }
             }
 
@@ -171,9 +206,9 @@ fun EditorScreen(
                     .weight(1f)
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp)
-                    .padding(top = 8.dp, bottom = 140.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 6.dp, bottom = 132.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 PresetRow(
                     accent = draft.color.dot,
@@ -182,118 +217,35 @@ fun EditorScreen(
                 )
                 DeepnessField(
                     draft = draft,
-                    previewing = previewing,
-                    scope = scope,
+                    visuals = visuals,
+                    wave = wave,
+                    tier = tier,
                     onChange = { update(draft.copy(deep = it)) },
                 )
-                ColorSelector(
+                CompactColorSelector(
                     selected = draft.color,
                     onSelect = { update(draft.copy(color = it)) },
                 )
-                ParameterCard {
-                    ParameterRow(
-                        label = "Rumble",
-                        value = draft.rumble,
-                        description = "Extra weight below 90 Hz",
-                        accent = draft.color.dot,
-                        startLabel = "Light",
-                        endLabel = "Heavy",
-                        onChange = { update(draft.copy(rumble = it)) },
-                    )
-                    HairlineDivider(startPadding = 18.dp)
-                    ParameterRow(
-                        label = "Width",
-                        value = draft.width,
-                        description = "From centred to enveloping",
-                        accent = draft.color.dot,
-                        startLabel = "Centred",
-                        endLabel = "Enveloping",
-                        onChange = { update(draft.copy(width = it)) },
+                EditorTabs(
+                    selected = group,
+                    onSelect = { group = it },
+                )
+                AnimatedContent(
+                    targetState = group,
+                    modifier = Modifier.animateContentSize(),
+                    transitionSpec = {
+                        fadeIn(tween(170, easing = Motion.EaseOut)) togetherWith
+                            fadeOut(tween(90))
+                    },
+                    label = "editor group",
+                ) { active ->
+                    ParameterGroup(
+                        group = active,
+                        draft = draft,
+                        onChange = { update(it) },
                     )
                 }
-                ParameterCard {
-                    ParameterRow(
-                        label = "Air",
-                        value = draft.air,
-                        description = "Top-end hiss above the body",
-                        accent = draft.color.dot,
-                        startLabel = "Hushed",
-                        endLabel = "Airy",
-                        onChange = { update(draft.copy(air = it)) },
-                    )
-                    HairlineDivider(startPadding = 18.dp)
-                    ParameterRow(
-                        label = "Wind",
-                        value = draft.wind,
-                        description = "Moving low-mid airflow with slow gusts",
-                        accent = draft.color.dot,
-                        startLabel = "Calm",
-                        endLabel = "Gusty",
-                        onChange = { update(draft.copy(wind = it)) },
-                    )
-                    HairlineDivider(startPadding = 18.dp)
-                    ParameterRow(
-                        label = "Fan",
-                        value = draft.fan,
-                        description = "Steady low-mid airflow with slow rotation",
-                        accent = draft.color.dot,
-                        startLabel = "Still",
-                        endLabel = "Rotating",
-                        onChange = { update(draft.copy(fan = it)) },
-                    )
-                }
-                ParameterCard {
-                    ParameterRow(
-                        label = "Rain",
-                        value = draft.rain,
-                        description = "Continuous wash — light drizzle to downpour",
-                        accent = draft.color.dot,
-                        startLabel = "Light",
-                        endLabel = "Heavy",
-                        onChange = { update(draft.copy(rain = it)) },
-                    )
-                    HairlineDivider(startPadding = 18.dp)
-                    ParameterRow(
-                        label = "Drops",
-                        value = draft.drops,
-                        description = "Close droplets over the bed",
-                        accent = draft.color.dot,
-                        startLabel = "None",
-                        endLabel = "Many",
-                        onChange = { update(draft.copy(drops = it)) },
-                    )
-                    HairlineDivider(startPadding = 18.dp)
-                    ParameterRow(
-                        label = "Plink",
-                        value = draft.plink,
-                        description = "Occasional rising water bubbles",
-                        accent = draft.color.dot,
-                        startLabel = "None",
-                        endLabel = "Often",
-                        onChange = { update(draft.copy(plink = it)) },
-                    )
-                }
-                ParameterCard {
-                    ParameterRow(
-                        label = "Swell",
-                        value = draft.swell,
-                        description = "Slow breathing above the deepness",
-                        accent = draft.color.dot,
-                        startLabel = "Still",
-                        endLabel = "Breathing",
-                        onChange = { update(draft.copy(swell = it)) },
-                    )
-                    HairlineDivider(startPadding = 18.dp)
-                    ParameterRow(
-                        label = "Drift",
-                        value = draft.drift,
-                        description = "Still to drifting — slow, organic movement",
-                        accent = draft.color.dot,
-                        startLabel = "Still",
-                        endLabel = "Drifting",
-                        onChange = { update(draft.copy(drift = it)) },
-                    )
-                }
+                Spacer(Modifier.height(4.dp))
             }
         }
 
@@ -303,7 +255,7 @@ fun EditorScreen(
             accent = draft.color.dot,
             orbColor = soundOrbColor(draft.color.dot, draft.deep),
             playing = previewing,
-            scope = scope,
+            visuals = visuals,
             statusChip = {
                 PlayerChip(
                     text = if (previewing) "Previewing" else "Preview",
@@ -368,6 +320,172 @@ fun EditorScreen(
             },
             onDismiss = { showNameSheet = false },
         )
+    }
+}
+
+private enum class EditorGroup(val label: String) {
+    Body("Body"),
+    Air("Air"),
+    Water("Water"),
+    Motion("Motion"),
+}
+
+@Composable
+private fun EditorTabs(
+    selected: EditorGroup,
+    onSelect: (EditorGroup) -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(38.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(OnSurface.copy(alpha = 0.035f))
+            .border(1.dp, Hairline, RoundedCornerShape(12.dp))
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        EditorGroup.entries.forEach { group ->
+            val active = selected == group
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .pressable(scale = 0.96f) {
+                        if (!active) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onSelect(group)
+                    }
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(if (active) OnSurface.copy(alpha = 0.94f) else Color.Transparent)
+                    .semantics { this.selected = active },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = group.label,
+                    fontFamily = DmSans,
+                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+                    fontSize = 11.sp,
+                    color = if (active) Ink else OnSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ParameterGroup(
+    group: EditorGroup,
+    draft: Draft,
+    onChange: (Draft) -> Unit,
+) {
+    ParameterCard {
+        when (group) {
+            EditorGroup.Body -> {
+                ParameterRow(
+                    label = "Rumble",
+                    value = draft.rumble,
+                    description = "Extra weight below 90 Hz",
+                    accent = draft.color.dot,
+                    startLabel = "Light",
+                    endLabel = "Heavy",
+                    onChange = { onChange(draft.copy(rumble = it)) },
+                )
+                HairlineDivider(startPadding = 18.dp)
+                ParameterRow(
+                    label = "Width",
+                    value = draft.width,
+                    description = "From centred to enveloping",
+                    accent = draft.color.dot,
+                    startLabel = "Centred",
+                    endLabel = "Enveloping",
+                    onChange = { onChange(draft.copy(width = it)) },
+                )
+            }
+            EditorGroup.Air -> {
+                ParameterRow(
+                    label = "Air",
+                    value = draft.air,
+                    description = "Top-end detail above the body",
+                    accent = draft.color.dot,
+                    startLabel = "Hushed",
+                    endLabel = "Airy",
+                    onChange = { onChange(draft.copy(air = it)) },
+                )
+                HairlineDivider(startPadding = 18.dp)
+                ParameterRow(
+                    label = "Wind",
+                    value = draft.wind,
+                    description = "Moving low-mid airflow with slow gusts",
+                    accent = draft.color.dot,
+                    startLabel = "Calm",
+                    endLabel = "Gusty",
+                    onChange = { onChange(draft.copy(wind = it)) },
+                )
+                HairlineDivider(startPadding = 18.dp)
+                ParameterRow(
+                    label = "Fan",
+                    value = draft.fan,
+                    description = "Steady low-mid airflow with slow rotation",
+                    accent = draft.color.dot,
+                    startLabel = "Still",
+                    endLabel = "Rotating",
+                    onChange = { onChange(draft.copy(fan = it)) },
+                )
+            }
+            EditorGroup.Water -> {
+                ParameterRow(
+                    label = "Rain",
+                    value = draft.rain,
+                    description = "Continuous wash — light drizzle to downpour",
+                    accent = draft.color.dot,
+                    startLabel = "Light",
+                    endLabel = "Heavy",
+                    onChange = { onChange(draft.copy(rain = it)) },
+                )
+                HairlineDivider(startPadding = 18.dp)
+                ParameterRow(
+                    label = "Drops",
+                    value = draft.drops,
+                    description = "Close droplets over the bed",
+                    accent = draft.color.dot,
+                    startLabel = "None",
+                    endLabel = "Many",
+                    onChange = { onChange(draft.copy(drops = it)) },
+                )
+                HairlineDivider(startPadding = 18.dp)
+                ParameterRow(
+                    label = "Plink",
+                    value = draft.plink,
+                    description = "Occasional rising water bubbles",
+                    accent = draft.color.dot,
+                    startLabel = "None",
+                    endLabel = "Often",
+                    onChange = { onChange(draft.copy(plink = it)) },
+                )
+            }
+            EditorGroup.Motion -> {
+                ParameterRow(
+                    label = "Swell",
+                    value = draft.swell,
+                    description = "Slow breathing above the deepness",
+                    accent = draft.color.dot,
+                    startLabel = "Still",
+                    endLabel = "Breathing",
+                    onChange = { onChange(draft.copy(swell = it)) },
+                )
+                HairlineDivider(startPadding = 18.dp)
+                ParameterRow(
+                    label = "Drift",
+                    value = draft.drift,
+                    description = "Still to drifting — slow, organic movement",
+                    accent = draft.color.dot,
+                    startLabel = "Still",
+                    endLabel = "Drifting",
+                    onChange = { onChange(draft.copy(drift = it)) },
+                )
+            }
+        }
     }
 }
 
@@ -458,8 +576,9 @@ private class HintShape(
 @Composable
 private fun DeepnessField(
     draft: Draft,
-    previewing: Boolean,
-    scope: () -> FloatArray?,
+    visuals: State<AudioVisuals>,
+    wave: State<FloatArray>,
+    tier: VisualTier,
     onChange: (Float) -> Unit,
 ) {
     val currentDraft by rememberUpdatedState(draft)
@@ -469,19 +588,12 @@ private fun DeepnessField(
     var touched by remember { mutableStateOf(false) }
     var dragging by remember { mutableStateOf(false) }
     val accent = draft.color.dot
-    val handleY = draft.deep
-    val level = rememberAudioLevel(scope, previewing)
-    val fade = animateFloatAsState(
-        targetValue = if (previewing) 1f else 0f,
-        animationSpec = tween(900),
-        label = "deepness energy",
-    )
-    val shape = RoundedCornerShape(32.dp)
+    val shape = RoundedCornerShape(28.dp)
 
     Box(
         Modifier
             .fillMaxWidth()
-            .height(268.dp)
+            .height(236.dp)
             .shadow(
                 elevation = 20.dp,
                 shape = shape,
@@ -490,7 +602,7 @@ private fun DeepnessField(
                 spotColor = Color.Black,
             )
             .clip(shape)
-            .background(Brush.verticalGradient(listOf(Color(0xFF1B1238), Color(0xFF0D071E))))
+            .background(Brush.verticalGradient(listOf(Color(0xFF19152C), Color(0xFF0C0818))))
             .border(1.dp, Hairline, shape)
             .pointerInput(Unit) {
                 detectVerticalDragGestures(
@@ -521,140 +633,28 @@ private fun DeepnessField(
                 }
             },
     ) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .drawBehind {
-                    val w = size.width
-                    val h = size.height
-                    val energy = (level.value * fade.value).coerceIn(0f, 1f)
-                    val accentRadius = w * (1.02f + energy * 0.08f)
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                accent.copy(alpha = 0.24f + energy * 0.12f),
-                                Color.Transparent,
-                            ),
-                            center = Offset(w * 0.88f, 0f),
-                            radius = accentRadius,
-                        ),
-                        radius = accentRadius,
-                        center = Offset(w * 0.88f, 0f),
-                    )
-                    drawRect(
-                        brush = Brush.verticalGradient(
-                            0.60f to Color.Transparent,
-                            1f to Color.Black.copy(alpha = 0.18f),
-                        ),
-                    )
-                    drawRect(
-                        brush = Brush.horizontalGradient(
-                            0.68f to Color.Transparent,
-                            1f to Color.Black.copy(alpha = 0.10f),
-                        ),
-                    )
-                    drawLine(
-                        brush = Brush.horizontalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                Color.White.copy(alpha = 0.10f),
-                                Color.Transparent,
-                            ),
-                        ),
-                        start = Offset(28.dp.toPx(), 1.dp.toPx()),
-                        end = Offset(w - 28.dp.toPx(), 1.dp.toPx()),
-                        strokeWidth = 1.dp.toPx(),
-                    )
-                },
-        )
-
-        SoftWaveform(
-            color = accent,
-            playing = previewing,
-            scope = scope,
-            level = level,
-            fade = fade,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .height(84.dp),
-        )
-
         Canvas(Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height
-            val top = 30.dp.toPx()
-            val bottom = h - 100.dp.toPx()
-
-            val ticks = 16
-            for (i in 0 until ticks) {
-                val y = top + (bottom - top) * i / (ticks - 1)
-                val major = i % 4 == 0
-                drawLine(
-                    color = OnSurfaceVariant.copy(alpha = if (major) 0.45f else 0.24f),
-                    start = Offset(w - if (major) 34.dp.toPx() else 26.dp.toPx(), y),
-                    end = Offset(w - 18.dp.toPx(), y),
-                    strokeWidth = 1.dp.toPx(),
-                )
-            }
-            val y = top + (bottom - top) * handleY
-            if (dragging) {
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(accent.copy(alpha = 0.28f), Color.Transparent),
-                        center = Offset(w - 29.dp.toPx(), y),
-                        radius = 16.dp.toPx(),
-                    ),
-                    radius = 16.dp.toPx(),
-                    center = Offset(w - 29.dp.toPx(), y),
-                )
-            }
-            drawRoundRect(
-                color = Color.Black.copy(alpha = 0.35f),
-                topLeft = Offset(w - 45.dp.toPx(), y - 4.dp.toPx()),
-                size = Size(32.dp.toPx(), 8.dp.toPx()),
-                cornerRadius = CornerRadius(4.dp.toPx()),
-            )
-            drawRoundRect(
-                brush = Brush.verticalGradient(
-                    colors = listOf(Color(0xFFFFF8EE), Color(0xFFD8D0C2), Color(0xFF9A9183)),
-                    startY = y - 3.dp.toPx(),
-                    endY = y + 3.dp.toPx(),
-                ),
-                topLeft = Offset(w - 44.dp.toPx(), y - 3.dp.toPx()),
-                size = Size(30.dp.toPx(), 6.dp.toPx()),
-                cornerRadius = CornerRadius(3.dp.toPx()),
-            )
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(Color(0xFFFFFDF7), Color(0xFFD6CEC0), Color(0xFF8E8578)),
-                    center = Offset(w - 18.dp.toPx(), y - 1.dp.toPx()),
-                    radius = 5.dp.toPx(),
-                ),
-                radius = 5.dp.toPx(),
-                center = Offset(w - 17.dp.toPx(), y),
+            drawDepthScene(
+                accent = accent,
+                deep = draft.deep,
+                visuals = visuals.value,
+                wave = wave.value,
+                dragging = dragging,
+                tier = tier,
             )
         }
 
         Column(
             Modifier
                 .align(Alignment.TopStart)
-                .padding(18.dp)
-                .width(124.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(
-                    Brush.verticalGradient(
-                        listOf(OnSurface.copy(alpha = 0.10f), OnSurface.copy(alpha = 0.05f)),
-                    ),
-                )
-                .border(1.dp, OnSurface.copy(alpha = 0.12f), RoundedCornerShape(24.dp))
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(start = 18.dp, top = 14.dp),
         ) {
             Text(
                 text = (draft.deep * 100).roundToInt().toString(),
                 fontFamily = FrauncesDisplay,
                 fontSize = 50.sp,
-                lineHeight = 52.sp,
+                lineHeight = 50.sp,
+                letterSpacing = (-1.5).sp,
                 color = OnSurface,
             )
             Text(
@@ -676,70 +676,144 @@ private fun DeepnessField(
                 text = "Drag to deepen",
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 20.dp, bottom = 96.dp),
+                    .padding(start = 18.dp, bottom = 12.dp),
                 fontFamily = DmSans,
                 fontSize = 10.5.sp,
-                color = OnSurfaceVariant,
+                color = OnSurfaceVariant.copy(alpha = 0.7f),
             )
         }
     }
 }
 
-/** The blurred waveform gets the space it needs here, instead of inside the player card. */
-@Composable
-private fun SoftWaveform(
-    color: Color,
-    playing: Boolean,
-    scope: () -> FloatArray?,
-    level: State<Float>,
-    fade: State<Float>,
-    modifier: Modifier = Modifier,
+private fun DrawScope.drawDepthScene(
+    accent: Color,
+    deep: Float,
+    visuals: AudioVisuals,
+    wave: FloatArray,
+    dragging: Boolean,
+    tier: VisualTier,
 ) {
-    val wave = rememberCalmWave(scope, playing, points = 34)
-    val alpha by animateFloatAsState(
-        targetValue = if (playing) 1f else 0.55f,
-        animationSpec = tween(700),
-        label = "soft wave alpha",
+    val w = size.width
+    val h = size.height
+    val top = 84.dp.toPx()
+    val bottom = h - 38.dp.toPx()
+    val lineY = top + (bottom - top) * deep.coerceIn(0f, 1f)
+    val phase = visuals.phase * 2.0 * PI
+    val energy = visuals.level.coerceIn(0f, 1f)
+
+    val ambientRadius = w * (0.92f + energy * 0.08f)
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                accent.copy(alpha = 0.22f + energy * 0.10f),
+                accent.copy(alpha = 0.055f),
+                Color.Transparent,
+            ),
+            center = Offset(w * 0.86f, 0f),
+            radius = ambientRadius,
+        ),
+        center = Offset(w * 0.86f, 0f),
+        radius = ambientRadius,
     )
-    Canvas(modifier) {
-        val values = wave.value
-        val w = size.width
-        val h = size.height
-        val energy = (level.value * fade.value).coerceIn(0f, 1f)
-        val mid = h * 0.56f
-        val amp = h * (0.17f + energy * 0.07f)
-        val dx = w / (values.size - 1)
+
+    // Denser strata below the surface; the air detail lives above it as dust.
+    val strata = if (tier == VisualTier.Lite) 4 else 6
+    for (i in 0 until strata) {
+        val p = (i + 1) / (strata + 1f)
+        val sy = lineY + (h - lineY - 14.dp.toPx()) * p
+        val amplitude = (1.4f + p * 2.0f + energy * 3.8f).dp.toPx()
         val path = Path()
-        var previousX = 0f
-        var previousY = mid + values[0] * amp
-        path.moveTo(previousX, previousY)
-        for (i in 1 until values.size) {
-            val x = i * dx
-            val y = mid + values[i] * amp
-            path.quadraticTo(previousX, previousY, (previousX + x) / 2f, (previousY + y) / 2f)
-            previousX = x
-            previousY = y
+        var x = 0f
+        while (x <= w) {
+            val y = sy +
+                sin(x / w * 5.4f * PI.toFloat() + phase.toFloat() * 0.6f + i * 1.7f) * amplitude +
+                sin(x / w * 11.2f * PI.toFloat() - phase.toFloat() * 0.4f + i) * amplitude * 0.34f
+            if (x == 0f) path.moveTo(x, y) else path.lineTo(x, y)
+            x += 8.dp.toPx()
         }
-        path.lineTo(previousX, previousY)
         drawPath(
             path = path,
-            color = color.copy(alpha = 0.05f * alpha),
-            style = Stroke(width = 22.dp.toPx(), cap = StrokeCap.Round),
-        )
-        drawPath(
-            path = path,
-            color = color.copy(alpha = 0.08f * alpha),
-            style = Stroke(width = 13.dp.toPx(), cap = StrokeCap.Round),
-        )
-        drawPath(
-            path = path,
-            color = color.copy(alpha = 0.11f * alpha),
-            style = Stroke(width = 7.dp.toPx(), cap = StrokeCap.Round),
-        )
-        drawPath(
-            path = path,
-            color = color.copy(alpha = 0.30f * alpha),
-            style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round),
+            color = accent.copy(alpha = 0.05f + p * 0.10f),
+            style = Stroke(width = 1.dp.toPx()),
         )
     }
+
+    val surface = Path()
+    val points = wave.size.coerceAtLeast(2)
+    val amplitude = (4.0f + visuals.low * 10.0f + energy * 6.0f).dp.toPx()
+    for (i in 0 until points) {
+        val x = w * i / (points - 1f)
+        val value = (wave[i] * 2.2f).coerceIn(-1f, 1f)
+        val y = lineY + value * amplitude
+        if (i == 0) surface.moveTo(x, y) else surface.lineTo(x, y)
+    }
+    drawPath(
+        path = surface,
+        color = accent.copy(alpha = 0.18f + energy * 0.12f),
+        style = Stroke(width = 9.dp.toPx(), cap = StrokeCap.Round),
+    )
+    drawPath(
+        path = surface,
+        color = accent.copy(alpha = 0.95f),
+        style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round),
+    )
+
+    // Air detail is sparse on purpose. It should read as dust, not an EQ.
+    val dust = if (tier == VisualTier.Full && energy > 0.06f) 9 else 0
+    for (i in 0 until dust) {
+        val x = (i * 43.dp.toPx() + (visuals.phase * 300.dp.toPx())) % w
+        val y = lineY - (16.dp.toPx() + (i * 17.dp.toPx()) % ((lineY - top).coerceAtLeast(18.dp.toPx())))
+        drawCircle(
+            color = accent.copy(alpha = 0.12f + visuals.air * 0.24f),
+            radius = (0.7f + (i % 3) * 0.3f).dp.toPx(),
+            center = Offset(x, y),
+        )
+    }
+
+    // A warm physical grip rather than a standard slider thumb.
+    val knobW = 30.dp.toPx()
+    val knobH = 8.dp.toPx()
+    val knobX = w - 14.dp.toPx() - knobW
+    drawRoundRect(
+        color = Color.Black.copy(alpha = 0.30f),
+        topLeft = Offset(knobX, lineY - knobH / 2f + 1.dp.toPx()),
+        size = Size(knobW, knobH),
+        cornerRadius = CornerRadius(knobH / 2f),
+    )
+    drawRoundRect(
+        brush = Brush.verticalGradient(
+            colors = listOf(Color(0xFFFFF8EA), Color(0xFFC9BDA9)),
+            startY = lineY - knobH / 2f,
+            endY = lineY + knobH / 2f,
+        ),
+        topLeft = Offset(knobX, lineY - knobH / 2f),
+        size = Size(knobW, knobH),
+        cornerRadius = CornerRadius(knobH / 2f),
+    )
+    drawCircle(
+        color = Color.White.copy(alpha = 0.55f),
+        radius = 0.8.dp.toPx(),
+        center = Offset(knobX + knobW * 0.5f, lineY - 1.2.dp.toPx()),
+    )
+
+    if (dragging) {
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(accent.copy(alpha = 0.26f), Color.Transparent),
+                center = Offset(knobX + knobW / 2f, lineY),
+                radius = 18.dp.toPx(),
+            ),
+            center = Offset(knobX + knobW / 2f, lineY),
+            radius = 18.dp.toPx(),
+        )
+    }
+
+    drawRect(
+        brush = Brush.verticalGradient(
+            0f to Color.Transparent,
+            1f to Color.Black.copy(alpha = 0.18f),
+        ),
+        topLeft = Offset(0f, lineY),
+        size = Size(w, h - lineY),
+    )
 }

@@ -409,6 +409,8 @@ class NoiseService : Service() {
 
     fun scope(): FloatArray? = engine.scope()
 
+    fun bands(): FloatArray? = engine.bands()
+
     /* ------------------------------------------------------------------ */
     /* State                                                               */
     /* ------------------------------------------------------------------ */

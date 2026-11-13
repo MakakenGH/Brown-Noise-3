@@ -1,5 +1,6 @@
 package com.deepbrown.noise
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
@@ -31,6 +32,22 @@ class NoiseDspTest {
         assertTrue("expected audible RMS, got $rms", rms > 0.005)
         assertTrue("expected unclipped output, got $peak", peak <= 32767)
         assertTrue("expected finite output", rms.isFinite())
+    }
+
+    @Test
+    fun spectralBandsAreFiniteAndNormalized() {
+        val dsp = NoiseDsp(48000)
+        dsp.setParams(Params(volume = 1f).toDsp())
+        dsp.setMasterTarget(1.0)
+        dsp.setSleepGain(1.0)
+        val frames = 48_000
+        val out = ShortArray(frames * 2)
+        dsp.render(out, frames)
+
+        val bands = dsp.copyBands(512)
+        assertEquals(4, bands.size)
+        assertTrue("expected at least one live band", bands.any { it > 0.01f })
+        assertTrue("bands should stay finite and normalised", bands.all { it.isFinite() && it in 0f..1f })
     }
 
     @Test
