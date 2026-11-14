@@ -61,6 +61,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -71,9 +72,11 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -157,6 +160,44 @@ fun Modifier.pressable(
             onClick = onClick,
         )
 }
+
+/**
+ * One translucent surface treatment for cards and rows. The aura behind the
+ * screen shows through; a dark warm base keeps text readable. No blur.
+ */
+fun Modifier.glassFill(
+    shape: Shape,
+    accent: Color? = null,
+    strong: Boolean = false,
+): Modifier {
+    val top = if (accent != null) lerp(GlassTop, accent, 0.10f) else GlassTop
+    val bottom = if (accent != null) lerp(GlassBottom, accent, 0.06f) else GlassBottom
+    val topAlpha = if (strong) 0.60f else 0.44f
+    val bottomAlpha = if (strong) 0.42f else 0.28f
+    return this
+        .clip(shape)
+        .background(
+            Brush.verticalGradient(
+                listOf(
+                    top.copy(alpha = topAlpha),
+                    bottom.copy(alpha = bottomAlpha),
+                ),
+            ),
+        )
+}
+
+fun Modifier.glassPanel(
+    shape: Shape,
+    accent: Color? = null,
+    strong: Boolean = false,
+): Modifier = this
+    .glassFill(shape, accent, strong)
+    .border(1.dp, GlassRim, shape)
+
+fun Modifier.glassChip(shape: Shape): Modifier = this
+    .clip(shape)
+    .background(GlassChip)
+    .border(1.dp, GlassRim.copy(alpha = 0.60f), shape)
 
 /* ---------------------------------------------------------------------- */
 /* Icons drawn locally                                                     */
@@ -279,74 +320,59 @@ fun ColorOrb(
     color: Color,
     size: Dp,
     modifier: Modifier = Modifier,
-    ring: Boolean = false,
-    ringAlpha: Float = 1f,
 ) {
     Box(
-        modifier = modifier.size(size + if (ring) 8.dp else 0.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (ring) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .clip(CircleShape)
-                    .border(1.5.dp, color.copy(alpha = 0.85f * ringAlpha), CircleShape),
-            )
-        }
-        Box(
-            Modifier
-                .size(size)
-                .clip(CircleShape)
-                .drawBehind {
-                    val w = this.size.width
-                    val h = this.size.height
-                    // A lit sphere: a soft top-left light, a small specular glint,
-                    // and a quiet shadow at the lower-right edge.
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            0f to lerp(color, Color.White, 0.44f),
-                            0.32f to lerp(color, Color.White, 0.07f),
-                            0.72f to color,
-                            1f to lerp(color, Color.Black, 0.28f),
-                            center = Offset(w * 0.30f, h * 0.24f),
-                            radius = w * 0.98f,
-                        ),
-                    )
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            0f to Color.White.copy(alpha = 0.26f),
-                            0.55f to Color.White.copy(alpha = 0.06f),
-                            1f to Color.Transparent,
-                            center = Offset(w * 0.28f, h * 0.22f),
-                            radius = w * 0.24f,
-                        ),
-                        radius = w * 0.24f,
-                        center = Offset(w * 0.28f, h * 0.22f),
-                    )
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            0f to Color.Transparent,
-                            0.62f to Color.Transparent,
-                            1f to Color.Black.copy(alpha = 0.20f),
-                            center = Offset(w * 0.72f, h * 0.78f),
-                            radius = w * 0.78f,
-                        ),
-                    )
-                }
-                .border(
-                    1.dp,
-                    Brush.linearGradient(
-                        listOf(
-                            Color.White.copy(alpha = 0.28f),
-                            Color.Transparent,
-                            Color.Black.copy(alpha = 0.10f),
-                        ),
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .drawBehind {
+                val w = this.size.width
+                val h = this.size.height
+                // A lit sphere: a soft top-left light, a small specular glint,
+                // and a quiet shadow at the lower-right edge.
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        0f to lerp(color, Color.White, 0.44f),
+                        0.32f to lerp(color, Color.White, 0.07f),
+                        0.72f to color,
+                        1f to lerp(color, Color.Black, 0.28f),
+                        center = Offset(w * 0.30f, h * 0.24f),
+                        radius = w * 0.98f,
                     ),
-                    CircleShape,
+                )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        0f to Color.White.copy(alpha = 0.26f),
+                        0.55f to Color.White.copy(alpha = 0.06f),
+                        1f to Color.Transparent,
+                        center = Offset(w * 0.28f, h * 0.22f),
+                        radius = w * 0.24f,
+                    ),
+                    radius = w * 0.24f,
+                    center = Offset(w * 0.28f, h * 0.22f),
+                )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        0f to Color.Transparent,
+                        0.62f to Color.Transparent,
+                        1f to Color.Black.copy(alpha = 0.20f),
+                        center = Offset(w * 0.72f, h * 0.78f),
+                        radius = w * 0.78f,
+                    ),
+                )
+            }
+            .border(
+                1.dp,
+                Brush.linearGradient(
+                    listOf(
+                        Color.White.copy(alpha = 0.28f),
+                        Color.Transparent,
+                        Color.Black.copy(alpha = 0.10f),
+                    ),
                 ),
-        )
-    }
+                CircleShape,
+            ),
+    )
 }
 
 @Composable
@@ -456,9 +482,7 @@ fun NameField(
         modifier = modifier
             .fillMaxWidth()
             .height(56.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(SurfaceHigh)
-            .border(1.dp, Hairline, RoundedCornerShape(18.dp))
+            .glassPanel(RoundedCornerShape(18.dp))
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.CenterStart,
@@ -525,7 +549,7 @@ fun HairlineDivider(startPadding: Dp = 0.dp) {
             .fillMaxWidth()
             .padding(start = startPadding)
             .height(1.dp)
-            .background(Hairline),
+            .background(Color.White.copy(alpha = 0.065f)),
     )
 }
 
@@ -533,29 +557,15 @@ fun HairlineDivider(startPadding: Dp = 0.dp) {
 fun ColorSelector(
     selected: NoiseColor?,
     onSelect: (NoiseColor) -> Unit,
+    activeColor: NoiseColor? = null,
+    playing: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val haptics = LocalHapticFeedback.current
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(94.dp)
-            .drawBehind {
-                val y = size.height * 0.55f
-                drawLine(
-                    brush = Brush.horizontalGradient(
-                        listOf(
-                            Color.Transparent,
-                            Color.White.copy(alpha = 0.10f),
-                            Color.White.copy(alpha = 0.06f),
-                            Color.Transparent,
-                        ),
-                    ),
-                    start = Offset(size.width * 0.07f, y),
-                    end = Offset(size.width * 0.93f, y),
-                    strokeWidth = 1.dp.toPx(),
-                )
-            },
+            .height(94.dp),
         contentAlignment = Alignment.Center,
     ) {
         Row(
@@ -574,6 +584,15 @@ fun ColorSelector(
                     animationSpec = tween(320, easing = Motion.EaseOut),
                     label = "orb size",
                 )
+                val shadowAlpha by animateFloatAsState(
+                    targetValue = if (activeColor == color) {
+                        if (playing) 0.55f else 0.30f
+                    } else {
+                        0f
+                    },
+                    animationSpec = tween(500, easing = Motion.EaseOut),
+                    label = "orb shadow",
+                )
                 Column(
                     modifier = Modifier
                         .weight(1f)
@@ -590,20 +609,33 @@ fun ColorSelector(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
-                    Box(Modifier.size(54.dp), contentAlignment = Alignment.Center) {
-                        if (active) {
-                            Box(
-                                Modifier
-                                    .size(62.dp)
-                                    .background(
-                                        Brush.radialGradient(
-                                            listOf(color.dot.copy(alpha = 0.20f), Color.Transparent),
-                                        ),
-                                        CircleShape,
-                                    ),
-                            )
-                        }
-                        ColorOrb(color.dot, orbSize.dp, ring = active)
+                    Box(
+                        modifier = Modifier
+                            .size(54.dp)
+                            .drawBehind {
+                                if (shadowAlpha > 0.01f) {
+                                    val cx = size.width / 2f
+                                    val cy = size.height * 0.82f
+                                    scale(scaleX = 1f, scaleY = 0.34f, pivot = Offset(cx, cy)) {
+                                        drawCircle(
+                                            brush = Brush.radialGradient(
+                                                colors = listOf(
+                                                    color.dot.copy(alpha = shadowAlpha),
+                                                    color.dot.copy(alpha = shadowAlpha * 0.24f),
+                                                    Color.Transparent,
+                                                ),
+                                                center = Offset(cx, cy),
+                                                radius = size.width * 0.60f,
+                                            ),
+                                            radius = size.width * 0.60f,
+                                            center = Offset(cx, cy),
+                                        )
+                                    }
+                                }
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        ColorOrb(color.dot, orbSize.dp)
                     }
                     Spacer(Modifier.height(7.dp))
                     Text(
@@ -767,9 +799,7 @@ fun ParameterCard(content: @Composable ColumnScope.() -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(Surface)
-            .border(1.dp, Hairline, RoundedCornerShape(24.dp)),
+            .glassPanel(RoundedCornerShape(24.dp)),
         content = content,
     )
 }
@@ -871,9 +901,7 @@ private fun PresetChip(label: String, dot: Color, onClick: () -> Unit) {
         modifier = Modifier
             .height(34.dp)
             .pressable(scale = 0.94f, onClick = onClick)
-            .clip(RoundedCornerShape(14.dp))
-            .background(SurfaceHigh)
-            .border(1.dp, Hairline, RoundedCornerShape(14.dp))
+            .glassChip(RoundedCornerShape(14.dp))
             .padding(horizontal = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -932,7 +960,7 @@ fun HomeHeader(
                 .size(44.dp)
                 .clip(CircleShape)
                 .pressable(scale = 0.90f, onClick = onSettings)
-                .border(1.dp, Hairline, CircleShape)
+                .glassChip(CircleShape)
                 .semantics { contentDescription = "Playback settings" },
             contentAlignment = Alignment.Center,
         ) {
@@ -1047,47 +1075,74 @@ fun SoundRow(
         modifier = modifier
             .fillMaxWidth()
             .height(64.dp)
-            .clip(shape)
-            .background(
+            .glassFill(shape, accent = if (active) orbColor else null)
+            .then(
                 if (active) {
-                    Brush.horizontalGradient(
-                        listOf(
-                            orbColor.copy(alpha = 0.19f),
-                            Surface.copy(alpha = 0.58f),
-                            Surface.copy(alpha = 0.48f),
+                    Modifier.background(
+                        Brush.horizontalGradient(
+                            listOf(orbColor.copy(alpha = 0.16f), Color.Transparent),
                         ),
                     )
                 } else {
-                    Brush.verticalGradient(
-                        listOf(Surface.copy(alpha = 0.58f), Surface.copy(alpha = 0.47f)),
-                    )
+                    Modifier
                 },
             )
-            .drawBehind {
-                val hair = Color.White.copy(alpha = 0.045f)
-                drawLine(hair, Offset(0f, 0f), Offset(0f, size.height), 1.dp.toPx())
-                drawLine(hair, Offset(size.width, 0f), Offset(size.width, size.height), 1.dp.toPx())
+            .drawWithContent {
+                drawContent()
+                val stroke = 1.dp.toPx()
+                val inset = stroke / 2f
+                val rim = Color.White.copy(alpha = 0.13f)
+                val radius = 22.dp.toPx()
+                drawLine(rim, Offset(inset, 0f), Offset(inset, size.height), stroke)
+                drawLine(rim, Offset(size.width - inset, 0f), Offset(size.width - inset, size.height), stroke)
                 if (first) {
-                    drawLine(
-                        Color.White.copy(alpha = 0.07f),
-                        Offset(0f, 0.5f),
-                        Offset(size.width, 0.5f),
-                        1.dp.toPx(),
+                    drawArc(
+                        color = rim,
+                        startAngle = 180f,
+                        sweepAngle = 90f,
+                        useCenter = false,
+                        topLeft = Offset(inset, inset),
+                        size = Size(radius * 2f, radius * 2f),
+                        style = Stroke(stroke),
                     )
+                    drawArc(
+                        color = rim,
+                        startAngle = 270f,
+                        sweepAngle = 90f,
+                        useCenter = false,
+                        topLeft = Offset(size.width - radius * 2f - inset, inset),
+                        size = Size(radius * 2f, radius * 2f),
+                        style = Stroke(stroke),
+                    )
+                    drawLine(rim, Offset(radius, inset), Offset(size.width - radius, inset), stroke)
                 }
                 if (last) {
-                    drawLine(
-                        Color.White.copy(alpha = 0.055f),
-                        Offset(0f, size.height - 0.5f),
-                        Offset(size.width, size.height - 0.5f),
-                        1.dp.toPx(),
+                    drawArc(
+                        color = rim,
+                        startAngle = 90f,
+                        sweepAngle = 90f,
+                        useCenter = false,
+                        topLeft = Offset(inset, size.height - radius * 2f - inset),
+                        size = Size(radius * 2f, radius * 2f),
+                        style = Stroke(stroke),
                     )
-                } else {
+                    drawArc(
+                        color = rim,
+                        startAngle = 0f,
+                        sweepAngle = 90f,
+                        useCenter = false,
+                        topLeft = Offset(size.width - radius * 2f - inset, size.height - radius * 2f - inset),
+                        size = Size(radius * 2f, radius * 2f),
+                        style = Stroke(stroke),
+                    )
+                    drawLine(rim, Offset(radius, size.height - inset), Offset(size.width - radius, size.height - inset), stroke)
+                }
+                if (!last) {
                     drawLine(
-                        Hairline,
-                        Offset(48.dp.toPx(), size.height - 0.5f),
-                        Offset(size.width - 12.dp.toPx(), size.height - 0.5f),
-                        1.dp.toPx(),
+                        Color.White.copy(alpha = 0.075f),
+                        Offset(48.dp.toPx(), size.height - inset),
+                        Offset(size.width - 12.dp.toPx(), size.height - inset),
+                        stroke,
                     )
                 }
             }
@@ -1099,7 +1154,7 @@ fun SoundRow(
             .padding(start = 14.dp, end = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ColorOrb(orbColor, 29.dp, ring = active)
+        ColorOrb(orbColor, 29.dp)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
@@ -1201,13 +1256,7 @@ fun PlayerChip(
     Row(
         modifier = modifier
             .height(20.dp)
-            .clip(RoundedCornerShape(7.dp))
-            .background(
-                Brush.verticalGradient(
-                    listOf(OnSurface.copy(alpha = 0.10f), OnSurface.copy(alpha = 0.05f)),
-                ),
-            )
-            .border(1.dp, OnSurface.copy(alpha = 0.06f), RoundedCornerShape(7.dp))
+            .glassChip(RoundedCornerShape(7.dp))
             .then(click)
             .padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1272,12 +1321,7 @@ fun PlayerCard(
                 ambientColor = Color.Black,
                 spotColor = Color.Black,
             )
-            .clip(shape)
-            .background(
-                Brush.verticalGradient(
-                    listOf(lerp(SurfaceHigh, Color.White, 0.025f), Surface.copy(alpha = 0.96f)),
-                ),
-            )
+            .glassFill(shape, accent = cardAccent, strong = true)
             .drawBehind {
                 drawPlayerAura(
                     accent = cardAccent,
@@ -1319,8 +1363,8 @@ fun PlayerCard(
                             radius = halo,
                         )
                         drawCircle(
-                            color = cardAccent.copy(alpha = 0.10f + e * 0.18f),
-                            radius = min * (0.68f + e * 0.12f),
+                            color = cardAccent.copy(alpha = 0.16f + e * 0.18f),
+                            radius = min * (0.54f + e * 0.04f),
                             style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()),
                         )
                     },
@@ -1329,8 +1373,6 @@ fun PlayerCard(
                 ColorOrb(
                     color = orbTint,
                     size = 42.dp,
-                    ring = true,
-                    ringAlpha = 0.82f,
                 )
             }
             Spacer(Modifier.width(12.dp))
@@ -1487,20 +1529,6 @@ fun EmptySounds(
                 center = Offset(size.width * 0.5f, size.height * 0.46f),
                 radius = size.minDimension * 0.66f,
             )
-            val ringColor = OnSurface.copy(alpha = 0.032f)
-            val ringCenterY = size.height * 0.60f
-            drawOval(
-                color = ringColor,
-                topLeft = Offset(size.width * 0.29f, ringCenterY - size.width * 0.07f),
-                size = Size(size.width * 0.42f, size.width * 0.14f),
-                style = Stroke(width = 1.dp.toPx()),
-            )
-            drawOval(
-                color = ringColor.copy(alpha = 0.70f),
-                topLeft = Offset(size.width * 0.37f, ringCenterY - size.width * 0.045f),
-                size = Size(size.width * 0.26f, size.width * 0.09f),
-                style = Stroke(width = 1.dp.toPx()),
-            )
         }
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -1550,34 +1578,55 @@ fun EmptySounds(
                 )
             }
             Spacer(Modifier.height(14.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(104.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                Presets.take(3).forEach { preset ->
-                    Row(
-                        modifier = Modifier
-                            .height(28.dp)
-                            .pressable(scale = 0.95f) { onPreset(preset) }
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(OnSurface.copy(alpha = 0.035f))
-                            .border(1.dp, OnSurface.copy(alpha = 0.07f), RoundedCornerShape(14.dp))
-                            .padding(horizontal = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(
-                            Modifier
-                                .size(5.dp)
-                                .clip(CircleShape)
-                                .background(preset.color.dot),
-                        )
-                        Spacer(Modifier.width(5.dp))
-                        Text(
-                            text = preset.name,
-                            fontFamily = DmSans,
-                            fontSize = 10.5.sp,
-                            color = OnSurfaceVariant,
-                        )
+                Canvas(Modifier.fillMaxSize()) {
+                    val ringColor = OnSurface.copy(alpha = 0.027f)
+                    val cy = size.height * 0.5f
+                    drawOval(
+                        color = ringColor,
+                        topLeft = Offset(size.width * 0.02f, cy - 46.dp.toPx()),
+                        size = Size(size.width * 0.96f, 92.dp.toPx()),
+                        style = Stroke(width = 1.dp.toPx()),
+                    )
+                    drawOval(
+                        color = ringColor.copy(alpha = 0.76f),
+                        topLeft = Offset(size.width * 0.15f, cy - 32.dp.toPx()),
+                        size = Size(size.width * 0.70f, 64.dp.toPx()),
+                        style = Stroke(width = 1.dp.toPx()),
+                    )
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Presets.take(3).forEach { preset ->
+                        Row(
+                            modifier = Modifier
+                                .height(28.dp)
+                                .pressable(scale = 0.95f) { onPreset(preset) }
+                                .glassChip(RoundedCornerShape(14.dp))
+                                .padding(horizontal = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(5.dp)
+                                    .clip(CircleShape)
+                                    .background(preset.color.dot),
+                            )
+                            Spacer(Modifier.width(5.dp))
+                            Text(
+                                text = preset.name,
+                                fontFamily = DmSans,
+                                fontSize = 10.5.sp,
+                                color = OnSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }
@@ -1629,9 +1678,7 @@ fun ConfirmDialog(
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 28.dp)
-                    .clip(RoundedCornerShape(28.dp))
-                    .background(SurfaceHigh)
-                    .border(1.dp, Hairline, RoundedCornerShape(28.dp))
+                    .glassPanel(RoundedCornerShape(28.dp), strong = true)
                     .padding(24.dp),
             ) {
                 Text(
@@ -1656,9 +1703,7 @@ fun ConfirmDialog(
                         modifier = Modifier
                             .weight(1f)
                             .height(46.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Surface)
-                            .border(1.dp, Hairline, RoundedCornerShape(16.dp))
+                            .glassChip(RoundedCornerShape(16.dp))
                             .clickable { if (!confirming) onDismiss() },
                         contentAlignment = Alignment.Center,
                     ) {

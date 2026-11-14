@@ -143,9 +143,7 @@ fun EditorScreen(
                     modifier = Modifier
                         .size(40.dp)
                         .pressable(scale = 0.90f) { requestBack() }
-                        .clip(CircleShape)
-                        .background(SurfaceHigh)
-                        .border(1.dp, Hairline, CircleShape),
+                        .glassChip(CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
@@ -340,9 +338,7 @@ private fun EditorTabs(
         modifier = Modifier
             .fillMaxWidth()
             .height(38.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(OnSurface.copy(alpha = 0.035f))
-            .border(1.dp, Hairline, RoundedCornerShape(12.dp))
+            .glassChip(RoundedCornerShape(12.dp))
             .padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
@@ -519,7 +515,7 @@ private fun PreviewHint(accent: Color) {
                 ambientColor = accent.copy(alpha = 0.25f),
                 spotColor = accent.copy(alpha = 0.25f),
             )
-            .background(SurfaceHigh, shape)
+            .glassFill(shape, accent = accent, strong = true)
             .border(1.dp, accent.copy(alpha = 0.35f), shape)
             .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 14.dp),
     ) {
@@ -603,7 +599,7 @@ private fun DeepnessField(
             )
             .clip(shape)
             .background(Brush.verticalGradient(listOf(Color(0xFF19152C), Color(0xFF0C0818))))
-            .border(1.dp, Hairline, shape)
+            .border(1.dp, GlassRim, shape)
             .pointerInput(Unit) {
                 detectVerticalDragGestures(
                     onDragStart = {

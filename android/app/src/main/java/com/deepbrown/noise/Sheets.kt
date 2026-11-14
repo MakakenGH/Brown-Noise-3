@@ -81,7 +81,7 @@ fun SoundSettingsSheet(
                 .padding(bottom = 20.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                ColorOrb(sound.color.dot, 44.dp, ring = true)
+                ColorOrb(sound.color.dot, 44.dp)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     SheetTitle(sound.name)
@@ -93,9 +93,7 @@ fun SoundSettingsSheet(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(Surface)
-                    .border(1.dp, Hairline, RoundedCornerShape(24.dp)),
+                    .glassPanel(RoundedCornerShape(24.dp)),
             ) {
                 ActionRow(
                     label = "Edit sound",
@@ -114,9 +112,7 @@ fun SoundSettingsSheet(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(DangerSurface)
-                    .border(1.dp, Danger.copy(alpha = 0.28f), RoundedCornerShape(24.dp)),
+                    .glassPanel(RoundedCornerShape(24.dp), accent = Danger),
             ) {
                 ActionRow(
                     label = "Delete sound",
@@ -203,9 +199,7 @@ fun PlaybackSettingsSheet(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(Surface)
-                    .border(1.dp, Hairline, RoundedCornerShape(24.dp)),
+                    .glassPanel(RoundedCornerShape(24.dp)),
             ) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -256,9 +250,7 @@ fun PlaybackSettingsSheet(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(Surface)
-                    .border(1.dp, Hairline, RoundedCornerShape(24.dp)),
+                    .glassPanel(RoundedCornerShape(24.dp)),
             ) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
                     Text(
@@ -309,6 +301,7 @@ private fun ChoiceChipRow(
     ) {
         options.forEach { (value, label) ->
             val active = selected == value
+            val shape = RoundedCornerShape(12.dp)
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -317,26 +310,19 @@ private fun ChoiceChipRow(
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         onSelect(value)
                     }
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(
+                    .then(
                         if (active) {
-                            Brush.verticalGradient(
-                                listOf(lerp(OnSurface, Color.White, 0.12f), OnSurface),
-                            )
+                            Modifier
+                                .clip(shape)
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(lerp(OnSurface, Color.White, 0.12f), OnSurface),
+                                    ),
+                                )
+                                .border(1.dp, Color.White.copy(alpha = 0.14f), shape)
                         } else {
-                            Brush.verticalGradient(
-                                listOf(lerp(SurfaceHigh, Color.White, 0.05f), SurfaceHigh),
-                            )
+                            Modifier.glassChip(shape)
                         },
-                    )
-                    .border(
-                        1.dp,
-                        if (active) {
-                            Color.White.copy(alpha = 0.14f)
-                        } else {
-                            Hairline.copy(alpha = 0.6f)
-                        },
-                        RoundedCornerShape(12.dp),
                     ),
                 contentAlignment = Alignment.Center,
             ) {

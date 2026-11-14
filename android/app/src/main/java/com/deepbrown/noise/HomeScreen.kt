@@ -145,6 +145,8 @@ fun HomeScreen(
                 ColorSelector(
                     selected = quickColor,
                     onSelect = onQuick,
+                    activeColor = if (loaded) color else null,
+                    playing = playing,
                     modifier = Modifier.padding(bottom = 12.dp),
                 )
                 SoundsHeader(
@@ -186,6 +188,8 @@ fun HomeScreen(
                     ColorSelector(
                         selected = quickColor,
                         onSelect = onQuick,
+                        activeColor = if (loaded) color else null,
+                        playing = playing,
                         modifier = Modifier.padding(bottom = 12.dp),
                     )
                 }
